@@ -1,72 +1,71 @@
 # Suma Tracking: Progress and Decisions Log
 
 ## Current status (4 November 2026)
-- Phase 1 (software installed): done
-- Phase 2 (project setup): done
-- Phase 3 (database and backend foundation): DONE
-  - Backend connected to PostgreSQL (b145497)
-  - Flyway V1 clients + projects (cb8575b), V2 initial data (acdac8c), V3 roles + users + teams (6e99b41)
-  - Client API (0e1f9f7, 58c7065)
-  - Project API (8094d46)
-  - User API + roles (7ce39ee)
-  - Project team API: done
-- Next: Phase 4, login and permissions (Spring Security, password hashing, tokens)
-
-## Roles (APPROVED 4 Nov 2026: follow the architecture diagram + FRD)
-| Diagram user type | Roles (code) |
-|---|---|
-| Super Admin | SUPER_ADMIN, MANAGEMENT_VIEWER |
-| Project Manager | CLIENT_ADMIN, PROJECT_MANAGER, TEAM_LEADER |
-| Support User | L3_SUPPORT, L2_SUPPORT, L1_SUPPORT |
-
-## APIs (no login yet; login and permissions come in Phase 4)
-### Clients
-GET /api/clients, GET /api/clients/{id}, POST /api/clients, PUT /api/clients/{id},
-POST /api/clients/{id}/activate, POST /api/clients/{id}/deactivate
-
-### Projects
-GET /api/projects (?clientId=), GET /api/projects/{id}, POST /api/projects, PUT /api/projects/{id},
-POST /api/projects/{id}/activate | deactivate | close
-
-### Roles and users (employees)
-GET /api/roles, GET /api/users, GET /api/users/{id}, POST /api/users, PUT /api/users/{id},
-POST /api/users/{id}/activate | deactivate
-
-### Project teams
-GET /api/projects/{projectId}/team (?includeRemoved=true), PUT /api/projects/{projectId}/team,
-POST /api/projects/{projectId}/team/{userId}/remove, GET /api/users/{userId}/projects
-
-## Business rules (all tested 4 Nov 2026)
-- Names unique (client name; project name per client; employee email and Employee ID), capital letters ignored.
-- Nothing is ever deleted: clients/projects/users are deactivated or closed; team removal sets active = false.
-- Projects cannot move to another client; no new projects under inactive clients.
-- Reporting manager must be active; no self-reporting, no reporting loops.
-- Teams: only ACTIVE projects and employees; Management Viewer cannot be on a team; PM/TL on a project must be Super Admin or Project Manager type; MEMBER needs L1/L2/L3; one active Project Manager per project; level can differ per project.
-
-## Test data (kept on purpose, fake names, example.com emails)
-- Client CL-0005 "Test Client Edited" (INACTIVE); project PR-0005 "Hero Test Project" (CLOSED)
-- Employees TEST-001 Admin, TEST-002 Team Leader, TEST-003 L1 (INACTIVE), TEST-004 L2
-- Hero team: TEST-001 PM, TEST-004 Member L2 (TEST-002 removed); Codility: TEST-004 Member L1
-
-## Database migrations (never edit a file after it has run)
-| Version | File | What it does |
-|---|---|---|
-| V1 | V1__create_clients_and_projects.sql | Creates clients and projects |
-| V2 | V2__add_initial_clients_and_projects.sql | Adds Suma Tool, Hero, Codility (ZENDESK), SouthCo (KEYPANION) |
-| V3 | V3__create_roles_users_and_project_assignments.sql | Creates roles (8), users, project_assignments; adds clients.account_manager_id |
+- Phase 1 software installed: DONE
+- Phase 2 project setup: DONE
+- Phase 3 database and backend foundation: DONE (clients, projects, roles, users, teams)
+- Phase 4 login and permissions: DONE (d0f85fd, 4845ca8)
+- Phase 7 audit history: DONE (bc292d6, 648061b)
+- NEXT: Phase 6 ticket management (common ticket model, statuses, history, assignment)
 
 ## How to start the backend
 1. cd C:\Dev\SumaTracking\backend
 2. $env:SUMA_DB_PASSWORD = [System.Net.NetworkCredential]::new("", (Read-Host "suma_app password" -AsSecureString)).Password
 3. .\mvnw.cmd spring-boot:run
-Stop with Ctrl + C, then Y. Repeat step 2 in every new terminal.
+Every API needs a login: POST /api/auth/login with email + password, then send "Authorization: Bearer <token>".
+
+## Roles (APPROVED 4 Nov 2026: architecture diagram + FRD)
+| Diagram user type | Roles |
+|---|---|
+| Super Admin | SUPER_ADMIN, MANAGEMENT_VIEWER (read-only) |
+| Project Manager | CLIENT_ADMIN, PROJECT_MANAGER, TEAM_LEADER |
+| Support User | L3_SUPPORT, L2_SUPPORT, L1_SUPPORT |
+
+## Permissions (server-side, tested 4 Nov 2026)
+- Super Admin: everything. Management Viewer: sees everything, changes nothing.
+- Others see only projects they are on (and those clients). L1-L3: no client or employee lists.
+- Client Admin: edit their clients; create / edit / activate / deactivate / close their clients' projects.
+- A project's own Project Manager: edit that project and its team.
+- Create / edit employees, reset passwords, revoke access, read audit: Super Admin only.
+- Hidden records answer 404; visible-but-not-allowed answers 403.
+- Simplification for now: a Client Admin "owns" a client by being on one of its projects. Linking via the Account Manager field comes later.
+
+## Login security (tested)
+- BCrypt (strength 12) password hashes; no plain passwords anywhere.
+- Random 43-character token; only its SHA-256 fingerprint is stored.
+- Session ends after 8 hours, 60 minutes idle, or logout. Admin can revoke all sessions.
+- 5 wrong passwords lock the account for 15 minutes. Same error message for every failed login.
+- Temporary passwords (first login, admin reset) must be changed before anything else.
+- Password rules: 10+ characters, a letter and a digit, max 72 bytes, not the email.
+- First Super Admin password: set once from terminal variables SUMA_BOOTSTRAP_ADMIN_EMAIL / SUMA_BOOTSTRAP_ADMIN_PASSWORD (works only when that admin has no password).
+
+## Audit (tested)
+- Schema audit, table audit.audit_log: who, what, when, client, project, old value, new value, source, IP.
+- Add-only: database triggers block UPDATE / DELETE / TRUNCATE (also on login_history).
+- Recorded: client, project, employee, team changes; password change / reset; access revoke.
+- Recorded in the same transaction as the change (refused changes leave no record).
+- Read: GET /api/audit (Super Admin only). No API exists to change or delete history.
+- Honest note: a database administrator could still remove triggers, so backups and restricted DB access remain necessary.
+
+## Database migrations (never edit a file after it has run)
+| Version | What it does |
+|---|---|
+| V1 | clients, projects |
+| V2 | Suma Tool, Hero, Codility (ZENDESK), SouthCo (KEYPANION) |
+| V3 | roles (8), users, project_assignments, clients.account_manager_id |
+| V4 | password / lock-out fields, user_sessions, login_history |
+| V5 | audit schema, audit_log, add-only triggers |
+
+## Test data (fake, example.com; keep for testing)
+- Admin: TEST-001 test.admin@example.com (Super Admin, real password known only to the owner)
+- TEST-002 Team Leader (Codility PM), TEST-003 L1 (INACTIVE), TEST-004 L2 (Hero L2, Codility L2), TEST-005 Management Viewer
+- Client CL-0005 (INACTIVE), project PR-0005 (CLOSED)
+- Before real use: create real employees and a real Super Admin, then deactivate the TEST accounts.
 
 ## Decisions
-- The password is never stored in a file. It comes from the SUMA_DB_PASSWORD terminal variable.
-- Only Flyway creates or changes tables (ddl-auto=validate).
-- Times are stored in UTC; each project has a time zone (default Asia/Kolkata).
-- The app connects as suma_app, never as postgres.
-- Client names are the same as the project names for now (user decision, 4 Nov 2026).
-- Error answers never show internal details (ApiExceptionHandler).
-- APPROVED 4 Nov 2026: audit logs go in the same PostgreSQL, in a separate protected schema (add-only).
-- APPROVED 4 Nov 2026: external systems are read-only first (bring tickets in); writing back comes later.
+- Passwords never in files or chat; database password comes from SUMA_DB_PASSWORD.
+- Only Flyway changes tables (ddl-auto=validate). Times stored in UTC; project time zone default Asia/Kolkata.
+- App connects as suma_app, never as postgres. Nothing is ever deleted (deactivate / close / active=false).
+- Client names = project names for now (user decision, 4 Nov 2026).
+- Audit in same PostgreSQL, separate protected schema (approved 4 Nov 2026).
+- External systems read-only first (approved 4 Nov 2026).
