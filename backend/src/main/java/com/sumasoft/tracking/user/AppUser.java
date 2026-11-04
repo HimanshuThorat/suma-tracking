@@ -13,6 +13,7 @@ import jakarta.persistence.PreUpdate;
 import jakarta.persistence.Table;
 import jakarta.persistence.Version;
 
+import java.time.Duration;
 import java.time.Instant;
 import java.time.LocalTime;
 import java.util.Locale;
@@ -20,7 +21,7 @@ import java.util.Locale;
 /**
  * One row of the "users" table (created by Flyway file V3): an employee.
  * Named AppUser (not User) to avoid confusion with the login library added later.
- * Password and login fields are added in the login step.
+ * Login fields (V4): only a BCrypt HASH of the password is stored, never the password.
  */
 @Entity
 @Table(name = "users")
@@ -83,6 +84,29 @@ public class AppUser {
     @Column(name = "version", nullable = false)
     private Integer version;
 
+    // ---------- Login fields (Flyway V4) ----------
+
+    /** BCrypt hash of the password. Empty means "no password set yet" (cannot log in). */
+    @Column(name = "password_hash", length = 100)
+    private String passwordHash;
+
+    @Column(name = "password_changed_at", columnDefinition = "timestamptz")
+    private Instant passwordChangedAt;
+
+    /** True for a new or reset password: the person must choose their own password first. */
+    @Column(name = "must_change_password", nullable = false)
+    private boolean mustChangePassword = true;
+
+    @Column(name = "failed_login_count", nullable = false)
+    private int failedLoginCount;
+
+    /** After too many wrong passwords, login is blocked until this time. */
+    @Column(name = "locked_until", columnDefinition = "timestamptz")
+    private Instant lockedUntil;
+
+    @Column(name = "last_login_at", columnDefinition = "timestamptz")
+    private Instant lastLoginAt;
+
     /** Needed by JPA. Not for normal use. */
     protected AppUser() {
     }
@@ -122,6 +146,45 @@ public class AppUser {
         this.status = "INACTIVE";
     }
 
+    // ---------- Login helpers ----------
+
+    public boolean hasPassword() {
+        return passwordHash != null;
+    }
+
+    public boolean isLocked(Instant now) {
+        return lockedUntil != null && lockedUntil.isAfter(now);
+    }
+
+    /** Count a wrong password. Returns true if this attempt locked the account. */
+    public boolean recordFailedLogin(Instant now, int maxAttempts, Duration lockTime) {
+        this.failedLoginCount++;
+        if (this.failedLoginCount >= maxAttempts) {
+            this.lockedUntil = now.plus(lockTime);
+            this.failedLoginCount = 0;
+            return true;
+        }
+        return false;
+    }
+
+    public void recordSuccessfulLogin(Instant now) {
+        this.failedLoginCount = 0;
+        this.lockedUntil = null;
+        this.lastLoginAt = now;
+    }
+
+    /**
+     * Store a new password HASH.
+     * mustChange = true for a temporary password (first login or admin reset).
+     */
+    public void setPasswordHash(String newHash, boolean mustChange, Instant now) {
+        this.passwordHash = newHash;
+        this.mustChangePassword = mustChange;
+        this.passwordChangedAt = now;
+        this.failedLoginCount = 0;
+        this.lockedUntil = null;
+    }
+
     private static String clean(String value) {
         if (value == null) {
             return null;
@@ -159,4 +222,10 @@ public class AppUser {
     public Instant getCreatedAt() { return createdAt; }
     public Instant getUpdatedAt() { return updatedAt; }
     public Integer getVersion() { return version; }
+    public String getPasswordHash() { return passwordHash; }
+    public Instant getPasswordChangedAt() { return passwordChangedAt; }
+    public boolean isMustChangePassword() { return mustChangePassword; }
+    public int getFailedLoginCount() { return failedLoginCount; }
+    public Instant getLockedUntil() { return lockedUntil; }
+    public Instant getLastLoginAt() { return lastLoginAt; }
 }
