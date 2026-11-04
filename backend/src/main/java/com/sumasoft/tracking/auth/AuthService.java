@@ -1,5 +1,6 @@
 package com.sumasoft.tracking.auth;
 
+import com.sumasoft.tracking.audit.AuditService;
 import com.sumasoft.tracking.auth.AuthDtos.ChangePasswordRequest;
 import com.sumasoft.tracking.auth.AuthDtos.LoginRequest;
 import com.sumasoft.tracking.auth.AuthDtos.LoginResponse;
@@ -16,7 +17,9 @@ import org.springframework.web.server.ResponseStatusException;
 
 import java.time.Duration;
 import java.time.Instant;
+import java.util.LinkedHashMap;
 import java.util.Locale;
+import java.util.Map;
 import java.util.Optional;
 
 /**
@@ -28,6 +31,8 @@ import java.util.Optional;
  *    inactive), so nobody can find out which emails exist.
  *  - 5 wrong passwords lock the account for 15 minutes.
  *  - A session ends after 8 hours, or after 60 minutes without use, or at logout.
+ * Audit (Step 26): password changes, admin password resets and access revokes are also recorded
+ * in the audit history (who did it to whom). No password or token is ever written there.
  */
 @Service
 public class AuthService {
@@ -45,17 +50,20 @@ public class AuthService {
     private final UserSessionRepository sessionRepository;
     private final LoginHistoryRepository historyRepository;
     private final PasswordEncoder passwordEncoder;
+    private final AuditService audit;
     /** Used to spend the same time on unknown emails as on real ones. */
     private final String dummyHash;
 
     public AuthService(UserRepository userRepository,
                        UserSessionRepository sessionRepository,
                        LoginHistoryRepository historyRepository,
-                       PasswordEncoder passwordEncoder) {
+                       PasswordEncoder passwordEncoder,
+                       AuditService audit) {
         this.userRepository = userRepository;
         this.sessionRepository = sessionRepository;
         this.historyRepository = historyRepository;
         this.passwordEncoder = passwordEncoder;
+        this.audit = audit;
         this.dummyHash = passwordEncoder.encode("timing-dummy-password-123");
     }
 
@@ -167,6 +175,8 @@ public class AuthService {
         // Stay logged in here, but log out every OTHER device.
         sessionRepository.revokeOthersForUser(user.getId(), caller.sessionId(), now);
         record(user, user.getEmail(), "PASSWORD_CHANGED", ipAddress, userAgent, now);
+        audit.record("USER_PASSWORD_CHANGED", "USER", user.getId(), null, null, null,
+                facts("otherSessionsEnded", true));
         return new MessageResponse("Password changed");
     }
 
@@ -185,6 +195,8 @@ public class AuthService {
         userRepository.save(user);
         sessionRepository.revokeAllForUser(user.getId(), now);
         record(user, user.getEmail(), "PASSWORD_RESET", ipAddress, userAgent, now);
+        audit.record("USER_PASSWORD_RESET", "USER", user.getId(), null, null, null,
+                facts("mustChangePassword", true));
         return new MessageResponse("Temporary password set. The employee must change it at next login");
     }
 
@@ -197,6 +209,8 @@ public class AuthService {
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Employee not found"));
         int count = sessionRepository.revokeAllForUser(user.getId(), now);
         record(user, user.getEmail(), "ACCESS_REVOKED", ipAddress, userAgent, now);
+        audit.record("USER_ACCESS_REVOKED", "USER", user.getId(), null, null, null,
+                facts("sessionsEnded", count));
         return new MessageResponse("Access revoked. Sessions ended: " + count);
     }
 
@@ -221,6 +235,13 @@ public class AuthService {
 
     private void record(AppUser user, String email, String event, String ip, String userAgent, Instant now) {
         historyRepository.save(LoginHistory.of(user, email, event, ip, userAgent, now));
+    }
+
+    /** A tiny "fact" for the audit history (never a password or token). */
+    private static Map<String, Object> facts(String key, Object value) {
+        Map<String, Object> map = new LinkedHashMap<>();
+        map.put(key, value);
+        return map;
     }
 
     private static ResponseStatusException loginFailed() {

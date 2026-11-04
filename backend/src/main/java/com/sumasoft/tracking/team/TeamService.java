@@ -1,5 +1,6 @@
 package com.sumasoft.tracking.team;
 
+import com.sumasoft.tracking.audit.AuditService;
 import com.sumasoft.tracking.auth.AccessService;
 import com.sumasoft.tracking.auth.AuthenticatedUser;
 import com.sumasoft.tracking.project.Project;
@@ -28,6 +29,7 @@ import java.util.Set;
  *  - change a team: Super Admin, Client Admin of the client, the project's own Project Manager
  *  - projects of one employee: Super Admin / Management Viewer / yourself = all of them;
  *    others = only projects they may see, and only for people on their projects
+ * Audit (Step 26): every add / change / removal is recorded with before and after values.
  */
 @Service
 public class TeamService {
@@ -36,15 +38,18 @@ public class TeamService {
     private final ProjectRepository projectRepository;
     private final UserRepository userRepository;
     private final AccessService access;
+    private final AuditService audit;
 
     public TeamService(ProjectAssignmentRepository assignmentRepository,
                        ProjectRepository projectRepository,
                        UserRepository userRepository,
-                       AccessService access) {
+                       AccessService access,
+                       AuditService audit) {
         this.assignmentRepository = assignmentRepository;
         this.projectRepository = projectRepository;
         this.userRepository = userRepository;
         this.access = access;
+        this.audit = audit;
     }
 
     @Transactional(readOnly = true)
@@ -115,23 +120,31 @@ public class TeamService {
 
         ProjectAssignment assignment = assignmentRepository.findByProjectIdAndUserId(projectId, user.getId())
                 .orElse(null);
+        AssignmentResponse before = assignment == null ? null : AssignmentResponse.from(assignment);
         if (assignment == null) {
             assignment = ProjectAssignment.create(project, user, projectRole, supportLevel);
         } else {
             assignment.change(projectRole, supportLevel);
         }
-        return AssignmentResponse.from(assignmentRepository.saveAndFlush(assignment));
+        AssignmentResponse after = AssignmentResponse.from(assignmentRepository.saveAndFlush(assignment));
+        audit.record(before == null ? "TEAM_MEMBER_ADDED" : "TEAM_MEMBER_CHANGED", "PROJECT_ASSIGNMENT",
+                after.id(), project.getClient().getId(), projectId, before, after);
+        return after;
     }
 
     /** Remove someone from the team. The record is kept (active = false). */
     @Transactional
     public AssignmentResponse remove(Long projectId, Long userId) {
-        findManageableProject(projectId);
+        Project project = findManageableProject(projectId);
         ProjectAssignment assignment = assignmentRepository.findByProjectIdAndUserId(projectId, userId)
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND,
                         "This employee is not on this project's team"));
+        AssignmentResponse before = AssignmentResponse.from(assignment);
         assignment.remove();
-        return AssignmentResponse.from(assignmentRepository.saveAndFlush(assignment));
+        AssignmentResponse after = AssignmentResponse.from(assignmentRepository.saveAndFlush(assignment));
+        audit.record("TEAM_MEMBER_REMOVED", "PROJECT_ASSIGNMENT", after.id(), project.getClient().getId(),
+                projectId, before, after);
+        return after;
     }
 
     /** A project the caller may see. Hidden projects answer "not found". */

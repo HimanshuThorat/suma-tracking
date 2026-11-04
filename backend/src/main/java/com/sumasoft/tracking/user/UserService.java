@@ -1,5 +1,6 @@
 package com.sumasoft.tracking.user;
 
+import com.sumasoft.tracking.audit.AuditService;
 import com.sumasoft.tracking.auth.AccessService;
 import com.sumasoft.tracking.auth.AuthenticatedUser;
 import com.sumasoft.tracking.team.ProjectAssignmentRepository;
@@ -20,6 +21,7 @@ import java.util.Set;
  *   see        : Super Admin, Management Viewer = all; Client Admin / PM / TL = people on their projects;
  *                L1-L3 = only themselves (GET /api/users/{ownId} or /api/auth/me)
  *   create / edit / activate / deactivate : Super Admin only
+ * Audit (Step 26): every create / edit / activate / deactivate is recorded (never any password data).
  */
 @Service
 public class UserService {
@@ -28,13 +30,16 @@ public class UserService {
     private final RoleRepository roleRepository;
     private final ProjectAssignmentRepository assignmentRepository;
     private final AccessService access;
+    private final AuditService audit;
 
     public UserService(UserRepository userRepository, RoleRepository roleRepository,
-                       ProjectAssignmentRepository assignmentRepository, AccessService access) {
+                       ProjectAssignmentRepository assignmentRepository, AccessService access,
+                       AuditService audit) {
         this.userRepository = userRepository;
         this.roleRepository = roleRepository;
         this.assignmentRepository = assignmentRepository;
         this.access = access;
+        this.audit = audit;
     }
 
     @Transactional(readOnly = true)
@@ -92,7 +97,9 @@ public class UserService {
         Role role = findRole(request.roleCode());
         AppUser manager = findManager(request.reportingManagerId(), null);
         AppUser saved = userRepository.saveAndFlush(AppUser.create(request, role, manager));
-        return UserResponse.from(saved);
+        UserResponse after = UserResponse.from(saved);
+        audit.record("USER_CREATED", "USER", saved.getId(), null, null, null, after);
+        return after;
     }
 
     @Transactional
@@ -110,24 +117,33 @@ public class UserService {
         checkShift(request);
         Role role = findRole(request.roleCode());
         AppUser manager = findManager(request.reportingManagerId(), id);
+        UserResponse before = UserResponse.from(user);
         user.applyDetails(request, role, manager);
-        return UserResponse.from(userRepository.saveAndFlush(user));
+        UserResponse after = UserResponse.from(userRepository.saveAndFlush(user));
+        audit.record("USER_UPDATED", "USER", id, null, null, before, after);
+        return after;
     }
 
     @Transactional
     public UserResponse activateUser(Long id) {
         access.requireSuperAdmin(access.current());
         AppUser user = findUser(id);
+        UserResponse before = UserResponse.from(user);
         user.activate();
-        return UserResponse.from(userRepository.saveAndFlush(user));
+        UserResponse after = UserResponse.from(userRepository.saveAndFlush(user));
+        audit.record("USER_ACTIVATED", "USER", id, null, null, before, after);
+        return after;
     }
 
     @Transactional
     public UserResponse deactivateUser(Long id) {
         access.requireSuperAdmin(access.current());
         AppUser user = findUser(id);
+        UserResponse before = UserResponse.from(user);
         user.deactivate();
-        return UserResponse.from(userRepository.saveAndFlush(user));
+        UserResponse after = UserResponse.from(userRepository.saveAndFlush(user));
+        audit.record("USER_DEACTIVATED", "USER", id, null, null, before, after);
+        return after;
     }
 
     private AppUser findUser(Long id) {

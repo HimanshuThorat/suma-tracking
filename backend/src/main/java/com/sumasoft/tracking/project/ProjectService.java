@@ -1,5 +1,6 @@
 package com.sumasoft.tracking.project;
 
+import com.sumasoft.tracking.audit.AuditService;
 import com.sumasoft.tracking.auth.AccessService;
 import com.sumasoft.tracking.auth.AuthenticatedUser;
 import com.sumasoft.tracking.client.Client;
@@ -21,6 +22,7 @@ import java.util.Set;
  *   create : Super Admin; Client Admin for their clients
  *   edit   : Super Admin; Client Admin of the client; the project's own Project Manager
  *   activate / deactivate / close : Super Admin; Client Admin of the client
+ * Audit (Step 26): every create / edit / status change is recorded with before and after values.
  */
 @Service
 public class ProjectService {
@@ -28,12 +30,14 @@ public class ProjectService {
     private final ProjectRepository projectRepository;
     private final ClientRepository clientRepository;
     private final AccessService access;
+    private final AuditService audit;
 
     public ProjectService(ProjectRepository projectRepository, ClientRepository clientRepository,
-                          AccessService access) {
+                          AccessService access, AuditService audit) {
         this.projectRepository = projectRepository;
         this.clientRepository = clientRepository;
         this.access = access;
+        this.audit = audit;
     }
 
     /** All projects, or only the projects of one client when clientId is given (only those you may see). */
@@ -77,7 +81,9 @@ public class ProjectService {
             throw new ResponseStatusException(HttpStatus.CONFLICT, "This client already has a project with this name");
         }
         Project saved = projectRepository.saveAndFlush(Project.create(client, request));
-        return ProjectResponse.from(saved);
+        ProjectResponse after = ProjectResponse.from(saved);
+        audit.record("PROJECT_CREATED", "PROJECT", saved.getId(), client.getId(), saved.getId(), null, after);
+        return after;
     }
 
     @Transactional
@@ -96,8 +102,11 @@ public class ProjectService {
         if (projectRepository.existsByClientIdAndProjectNameIgnoreCaseAndIdNot(request.clientId(), name, id)) {
             throw new ResponseStatusException(HttpStatus.CONFLICT, "This client already has a project with this name");
         }
+        ProjectResponse before = ProjectResponse.from(project);
         project.applyDetails(request);
-        return ProjectResponse.from(projectRepository.saveAndFlush(project));
+        ProjectResponse after = ProjectResponse.from(projectRepository.saveAndFlush(project));
+        audit.record("PROJECT_UPDATED", "PROJECT", id, after.clientId(), id, before, after);
+        return after;
     }
 
     @Transactional
@@ -107,22 +116,28 @@ public class ProjectService {
             throw new ResponseStatusException(HttpStatus.CONFLICT,
                     "Activate the client first. Its status is " + project.getClient().getStatus());
         }
-        project.activate();
-        return ProjectResponse.from(projectRepository.saveAndFlush(project));
+        return changeStatus(project, "PROJECT_ACTIVATED", Project::activate);
     }
 
     @Transactional
     public ProjectResponse deactivateProject(Long id) {
         Project project = findProjectForStatusChange(id);
-        project.deactivate();
-        return ProjectResponse.from(projectRepository.saveAndFlush(project));
+        return changeStatus(project, "PROJECT_DEACTIVATED", Project::deactivate);
     }
 
     @Transactional
     public ProjectResponse closeProject(Long id) {
         Project project = findProjectForStatusChange(id);
-        project.close();
-        return ProjectResponse.from(projectRepository.saveAndFlush(project));
+        return changeStatus(project, "PROJECT_CLOSED", Project::close);
+    }
+
+    /** Apply a status change, save it, and record it in the audit history. */
+    private ProjectResponse changeStatus(Project project, String auditAction, java.util.function.Consumer<Project> change) {
+        ProjectResponse before = ProjectResponse.from(project);
+        change.accept(project);
+        ProjectResponse after = ProjectResponse.from(projectRepository.saveAndFlush(project));
+        audit.record(auditAction, "PROJECT", project.getId(), after.clientId(), project.getId(), before, after);
+        return after;
     }
 
     /** Status changes: Super Admin, or Client Admin of the project's client. */
