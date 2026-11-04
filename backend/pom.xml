@@ -30,40 +30,45 @@
 		<java.version>21</java.version>
 	</properties>
 	<dependencies>
-		<!-- Already there before: input checking -->
+		<!-- Input checking -->
 		<dependency>
 			<groupId>org.springframework.boot</groupId>
 			<artifactId>spring-boot-starter-validation</artifactId>
 		</dependency>
-		<!-- Already there before: web / REST API -->
+		<!-- Web / REST API -->
 		<dependency>
 			<groupId>org.springframework.boot</groupId>
 			<artifactId>spring-boot-starter-webmvc</artifactId>
 		</dependency>
+		<!-- NEW: Spring Security (login, locking the APIs, BCrypt password hashing) -->
+		<dependency>
+			<groupId>org.springframework.boot</groupId>
+			<artifactId>spring-boot-starter-security</artifactId>
+		</dependency>
 
-		<!-- NEW: talk to the database from Java (JPA + Hibernate) -->
+		<!-- Talk to the database from Java (JPA + Hibernate) -->
 		<dependency>
 			<groupId>org.springframework.boot</groupId>
 			<artifactId>spring-boot-starter-data-jpa</artifactId>
 		</dependency>
-		<!-- NEW: Flyway, creates and changes tables safely, step by step -->
+		<!-- Flyway, creates and changes tables safely, step by step -->
 		<dependency>
 			<groupId>org.springframework.boot</groupId>
 			<artifactId>spring-boot-starter-flyway</artifactId>
 		</dependency>
-		<!-- NEW: Flyway support for PostgreSQL -->
+		<!-- Flyway support for PostgreSQL -->
 		<dependency>
 			<groupId>org.flywaydb</groupId>
 			<artifactId>flyway-database-postgresql</artifactId>
 		</dependency>
-		<!-- NEW: the PostgreSQL driver (the "plug") -->
+		<!-- The PostgreSQL driver (the "plug") -->
 		<dependency>
 			<groupId>org.postgresql</groupId>
 			<artifactId>postgresql</artifactId>
 			<scope>runtime</scope>
 		</dependency>
 
-		<!-- Already there before: test tools -->
+		<!-- Test tools -->
 		<dependency>
 			<groupId>org.springframework.boot</groupId>
 			<artifactId>spring-boot-starter-validation-test</artifactId>
