@@ -70,6 +70,44 @@ public class Client {
     protected Client() {
     }
 
+    /** Make a new client from checked input. New clients start as ACTIVE. */
+    public static Client create(ClientRequest request) {
+        Client client = new Client();
+        client.applyDetails(request);
+        client.status = "ACTIVE";
+        return client;
+    }
+
+    /** Copy the editable fields from checked input. Empty text is saved as "no value". */
+    public void applyDetails(ClientRequest request) {
+        this.clientName = clean(request.clientName());
+        this.companyName = clean(request.companyName());
+        this.contactPerson = clean(request.contactPerson());
+        this.email = clean(request.email());
+        this.contactNumber = clean(request.contactNumber());
+        this.address = clean(request.address());
+        this.businessDomain = clean(request.businessDomain());
+        this.onboardingDate = request.onboardingDate();
+        this.remarks = clean(request.remarks());
+    }
+
+    /** Deactivate never deletes the client, its projects, tickets or history (FR-021). */
+    public void activate() {
+        this.status = "ACTIVE";
+    }
+
+    public void deactivate() {
+        this.status = "INACTIVE";
+    }
+
+    private static String clean(String value) {
+        if (value == null) {
+            return null;
+        }
+        String trimmed = value.trim();
+        return trimmed.isEmpty() ? null : trimmed;
+    }
+
     @PrePersist
     void onCreate() {
         Instant now = Instant.now();
