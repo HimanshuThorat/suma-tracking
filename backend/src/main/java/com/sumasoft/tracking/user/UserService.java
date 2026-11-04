@@ -1,25 +1,40 @@
 package com.sumasoft.tracking.user;
 
+import com.sumasoft.tracking.auth.AccessService;
+import com.sumasoft.tracking.auth.AuthenticatedUser;
+import com.sumasoft.tracking.team.ProjectAssignmentRepository;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.server.ResponseStatusException;
 
+import java.util.HashSet;
 import java.util.List;
 import java.util.Locale;
+import java.util.Set;
 
 /**
  * The business rules for employees and roles live here.
+ * Permissions (Step 25):
+ *   roles list : everyone who is logged in
+ *   see        : Super Admin, Management Viewer = all; Client Admin / PM / TL = people on their projects;
+ *                L1-L3 = only themselves (GET /api/users/{ownId} or /api/auth/me)
+ *   create / edit / activate / deactivate : Super Admin only
  */
 @Service
 public class UserService {
 
     private final UserRepository userRepository;
     private final RoleRepository roleRepository;
+    private final ProjectAssignmentRepository assignmentRepository;
+    private final AccessService access;
 
-    public UserService(UserRepository userRepository, RoleRepository roleRepository) {
+    public UserService(UserRepository userRepository, RoleRepository roleRepository,
+                       ProjectAssignmentRepository assignmentRepository, AccessService access) {
         this.userRepository = userRepository;
         this.roleRepository = roleRepository;
+        this.assignmentRepository = assignmentRepository;
+        this.access = access;
     }
 
     @Transactional(readOnly = true)
@@ -29,16 +44,42 @@ public class UserService {
 
     @Transactional(readOnly = true)
     public List<UserResponse> listUsers() {
-        return userRepository.findAllByOrderByIdAsc().stream().map(UserResponse::from).toList();
+        AuthenticatedUser me = access.current();
+        if (access.seesEverything(me)) {
+            return userRepository.findAllByOrderByIdAsc().stream().map(UserResponse::from).toList();
+        }
+        if (access.isSupportUser(me)) {
+            throw AccessService.forbidden();
+        }
+        return userRepository.findByIdInOrderByIdAsc(visibleUserIds(me)).stream().map(UserResponse::from).toList();
     }
 
     @Transactional(readOnly = true)
     public UserResponse getUser(Long id) {
+        AuthenticatedUser me = access.current();
+        boolean allowed = access.seesEverything(me)
+                || me.userId().equals(id)
+                || (!access.isSupportUser(me) && visibleUserIds(me).contains(id));
+        if (!allowed) {
+            throw AccessService.notFound("Employee");
+        }
         return UserResponse.from(findUser(id));
+    }
+
+    /** People who share at least one project with me, plus me. */
+    private Set<Long> visibleUserIds(AuthenticatedUser me) {
+        Set<Long> ids = new HashSet<>();
+        ids.add(me.userId());
+        Set<Long> projectIds = access.visibleProjectIds(me);
+        if (!projectIds.isEmpty()) {
+            ids.addAll(assignmentRepository.findActiveUserIdsByProjectIds(projectIds));
+        }
+        return ids;
     }
 
     @Transactional
     public UserResponse createUser(UserRequest request) {
+        access.requireSuperAdmin(access.current());
         String email = request.email().trim();
         String code = request.employeeCode().trim();
         if (userRepository.existsByEmailIgnoreCase(email)) {
@@ -56,6 +97,7 @@ public class UserService {
 
     @Transactional
     public UserResponse updateUser(Long id, UserRequest request) {
+        access.requireSuperAdmin(access.current());
         AppUser user = findUser(id);
         String email = request.email().trim();
         String code = request.employeeCode().trim();
@@ -74,6 +116,7 @@ public class UserService {
 
     @Transactional
     public UserResponse activateUser(Long id) {
+        access.requireSuperAdmin(access.current());
         AppUser user = findUser(id);
         user.activate();
         return UserResponse.from(userRepository.saveAndFlush(user));
@@ -81,6 +124,7 @@ public class UserService {
 
     @Transactional
     public UserResponse deactivateUser(Long id) {
+        access.requireSuperAdmin(access.current());
         AppUser user = findUser(id);
         user.deactivate();
         return UserResponse.from(userRepository.saveAndFlush(user));

@@ -3,6 +3,7 @@ package com.sumasoft.tracking.user;
 import org.springframework.data.jpa.repository.EntityGraph;
 import org.springframework.data.jpa.repository.JpaRepository;
 
+import java.util.Collection;
 import java.util.List;
 import java.util.Optional;
 
@@ -13,6 +14,10 @@ public interface UserRepository extends JpaRepository<AppUser, Long> {
 
     @EntityGraph(attributePaths = {"role", "reportingManager"})
     List<AppUser> findAllByOrderByIdAsc();
+
+    /** Only these employees (used when a person may see just some employees). */
+    @EntityGraph(attributePaths = {"role", "reportingManager"})
+    List<AppUser> findByIdInOrderByIdAsc(Collection<Long> ids);
 
     /** Used by login: find the employee by email, with their role. */
     @EntityGraph(attributePaths = "role")

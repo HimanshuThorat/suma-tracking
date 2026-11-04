@@ -1,5 +1,7 @@
 package com.sumasoft.tracking.team;
 
+import com.sumasoft.tracking.auth.AccessService;
+import com.sumasoft.tracking.auth.AuthenticatedUser;
 import com.sumasoft.tracking.project.Project;
 import com.sumasoft.tracking.project.ProjectRepository;
 import com.sumasoft.tracking.user.AppUser;
@@ -11,6 +13,7 @@ import org.springframework.web.server.ResponseStatusException;
 
 import java.util.List;
 import java.util.Locale;
+import java.util.Set;
 
 /**
  * The business rules for project teams live here.
@@ -20,6 +23,11 @@ import java.util.Locale;
  *  - MEMBER needs a support level (L1 / L2 / L3).
  *  - A project has at most one active Project Manager.
  *  - Removing someone keeps the record (active = false).
+ * Permissions (Step 25):
+ *  - see a team: anyone who may see the project
+ *  - change a team: Super Admin, Client Admin of the client, the project's own Project Manager
+ *  - projects of one employee: Super Admin / Management Viewer / yourself = all of them;
+ *    others = only projects they may see, and only for people on their projects
  */
 @Service
 public class TeamService {
@@ -27,18 +35,21 @@ public class TeamService {
     private final ProjectAssignmentRepository assignmentRepository;
     private final ProjectRepository projectRepository;
     private final UserRepository userRepository;
+    private final AccessService access;
 
     public TeamService(ProjectAssignmentRepository assignmentRepository,
                        ProjectRepository projectRepository,
-                       UserRepository userRepository) {
+                       UserRepository userRepository,
+                       AccessService access) {
         this.assignmentRepository = assignmentRepository;
         this.projectRepository = projectRepository;
         this.userRepository = userRepository;
+        this.access = access;
     }
 
     @Transactional(readOnly = true)
     public List<AssignmentResponse> listTeam(Long projectId, boolean includeRemoved) {
-        findProject(projectId);
+        findVisibleProject(access.current(), projectId);
         List<ProjectAssignment> rows = includeRemoved
                 ? assignmentRepository.findByProjectIdOrderByIdAsc(projectId)
                 : assignmentRepository.findByProjectIdAndActiveTrueOrderByIdAsc(projectId);
@@ -47,15 +58,26 @@ public class TeamService {
 
     @Transactional(readOnly = true)
     public List<AssignmentResponse> listProjectsOfUser(Long userId) {
-        findUser(userId);
-        return assignmentRepository.findByUserIdOrderByIdAsc(userId).stream()
-                .map(AssignmentResponse::from).toList();
+        AuthenticatedUser me = access.current();
+        if (access.seesEverything(me) || me.userId().equals(userId)) {
+            findUser(userId);
+            return assignmentRepository.findByUserIdOrderByIdAsc(userId).stream()
+                    .map(AssignmentResponse::from).toList();
+        }
+        Set<Long> myProjects = access.visibleProjectIds(me);
+        List<ProjectAssignment> theirs = assignmentRepository.findByUserIdOrderByIdAsc(userId).stream()
+                .filter(a -> myProjects.contains(a.getProject().getId()))
+                .toList();
+        if (access.isSupportUser(me) || theirs.isEmpty()) {
+            throw AccessService.notFound("Employee");
+        }
+        return theirs.stream().map(AssignmentResponse::from).toList();
     }
 
     /** Add someone to the team, or change their job on it (also brings back a removed person). */
     @Transactional
     public AssignmentResponse assign(Long projectId, AssignmentRequest request) {
-        Project project = findProject(projectId);
+        Project project = findManageableProject(projectId);
         if (!"ACTIVE".equals(project.getStatus())) {
             throw new ResponseStatusException(HttpStatus.CONFLICT,
                     "Team changes are allowed only on ACTIVE projects. This project is " + project.getStatus());
@@ -104,6 +126,7 @@ public class TeamService {
     /** Remove someone from the team. The record is kept (active = false). */
     @Transactional
     public AssignmentResponse remove(Long projectId, Long userId) {
+        findManageableProject(projectId);
         ProjectAssignment assignment = assignmentRepository.findByProjectIdAndUserId(projectId, userId)
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND,
                         "This employee is not on this project's team"));
@@ -111,9 +134,23 @@ public class TeamService {
         return AssignmentResponse.from(assignmentRepository.saveAndFlush(assignment));
     }
 
-    private Project findProject(Long id) {
+    /** A project the caller may see. Hidden projects answer "not found". */
+    private Project findVisibleProject(AuthenticatedUser me, Long id) {
+        if (!access.canSeeProject(me, id)) {
+            throw AccessService.notFound("Project");
+        }
         return projectRepository.findById(id)
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Project not found"));
+    }
+
+    /** A project whose team the caller may change. */
+    private Project findManageableProject(Long id) {
+        AuthenticatedUser me = access.current();
+        Project project = findVisibleProject(me, id);
+        if (!access.canManageProject(me, project)) {
+            throw AccessService.forbidden();
+        }
+        return project;
     }
 
     private AppUser findUser(Long id) {

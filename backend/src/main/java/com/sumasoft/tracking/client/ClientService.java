@@ -1,5 +1,7 @@
 package com.sumasoft.tracking.client;
 
+import com.sumasoft.tracking.auth.AccessService;
+import com.sumasoft.tracking.auth.AuthenticatedUser;
 import org.springframework.data.domain.Sort;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
@@ -7,33 +9,55 @@ import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.server.ResponseStatusException;
 
 import java.util.List;
+import java.util.Set;
 
 /**
  * The business rules for clients live here (not in the controller).
+ * Permissions (Step 25):
+ *   see    : Super Admin, Management Viewer = all; Client Admin / PM / TL = their clients; L1-L3 = none
+ *   create : Super Admin
+ *   edit   : Super Admin, Client Admin of that client
+ *   activate / deactivate : Super Admin
  */
 @Service
 public class ClientService {
 
     private final ClientRepository clientRepository;
+    private final AccessService access;
 
-    public ClientService(ClientRepository clientRepository) {
+    public ClientService(ClientRepository clientRepository, AccessService access) {
         this.clientRepository = clientRepository;
+        this.access = access;
     }
 
     @Transactional(readOnly = true)
     public List<ClientResponse> listClients() {
-        return clientRepository.findAll(Sort.by("id")).stream()
-                .map(ClientResponse::from)
-                .toList();
+        AuthenticatedUser me = access.current();
+        if (access.seesEverything(me)) {
+            return clientRepository.findAll(Sort.by("id")).stream().map(ClientResponse::from).toList();
+        }
+        if (access.isSupportUser(me)) {
+            throw AccessService.forbidden();
+        }
+        Set<Long> ids = access.visibleClientIds(me);
+        if (ids.isEmpty()) {
+            return List.of();
+        }
+        return clientRepository.findByIdInOrderByIdAsc(ids).stream().map(ClientResponse::from).toList();
     }
 
     @Transactional(readOnly = true)
     public ClientResponse getClient(Long id) {
+        AuthenticatedUser me = access.current();
+        if (!access.canSeeClient(me, id)) {
+            throw AccessService.notFound("Client");
+        }
         return ClientResponse.from(findClient(id));
     }
 
     @Transactional
     public ClientResponse createClient(ClientRequest request) {
+        access.requireSuperAdmin(access.current());
         String name = request.clientName().trim();
         if (clientRepository.existsByClientNameIgnoreCase(name)) {
             throw new ResponseStatusException(HttpStatus.CONFLICT, "A client with this name already exists");
@@ -44,6 +68,13 @@ public class ClientService {
 
     @Transactional
     public ClientResponse updateClient(Long id, ClientRequest request) {
+        AuthenticatedUser me = access.current();
+        if (!access.canSeeClient(me, id)) {
+            throw AccessService.notFound("Client");
+        }
+        if (!access.isSuperAdmin(me) && !access.isClientAdminOf(me, id)) {
+            throw AccessService.forbidden();
+        }
         Client client = findClient(id);
         String name = request.clientName().trim();
         if (clientRepository.existsByClientNameIgnoreCaseAndIdNot(name, id)) {
@@ -55,6 +86,7 @@ public class ClientService {
 
     @Transactional
     public ClientResponse activateClient(Long id) {
+        access.requireSuperAdmin(access.current());
         Client client = findClient(id);
         client.activate();
         return ClientResponse.from(clientRepository.saveAndFlush(client));
@@ -62,6 +94,7 @@ public class ClientService {
 
     @Transactional
     public ClientResponse deactivateClient(Long id) {
+        access.requireSuperAdmin(access.current());
         Client client = findClient(id);
         client.deactivate();
         return ClientResponse.from(clientRepository.saveAndFlush(client));
