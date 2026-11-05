@@ -40,7 +40,7 @@
 			<groupId>org.springframework.boot</groupId>
 			<artifactId>spring-boot-starter-webmvc</artifactId>
 		</dependency>
-		<!-- NEW: Spring Security (login, locking the APIs, BCrypt password hashing) -->
+		<!-- Spring Security (login, locking the APIs, BCrypt password hashing) -->
 		<dependency>
 			<groupId>org.springframework.boot</groupId>
 			<artifactId>spring-boot-starter-security</artifactId>
@@ -66,6 +66,13 @@
 			<groupId>org.postgresql</groupId>
 			<artifactId>postgresql</artifactId>
 			<scope>runtime</scope>
+		</dependency>
+
+		<!-- NEW (Step 32a): Apache POI, reads Excel files (.xlsx and .xls) for the ticket import -->
+		<dependency>
+			<groupId>org.apache.poi</groupId>
+			<artifactId>poi-ooxml</artifactId>
+			<version>5.5.1</version>
 		</dependency>
 
 		<!-- Test tools -->
