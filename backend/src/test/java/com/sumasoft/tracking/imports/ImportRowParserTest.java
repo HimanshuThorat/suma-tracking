@@ -279,6 +279,29 @@ class ImportRowParserTest {
     }
 
     @Test
+    void emptyTemplateRowsAreSkipped() {
+        String csv = "Sr.no,Ticket ID,Date of Creation,Status,Resolution Time\n"
+                + "1,900020,5/1/2026,Solved,0:10:00\n"
+                + "2,,,,0:00:00\n"
+                + "3,,,,\n";
+        SpreadsheetReader.ReadResult res = SpreadsheetReader.read("test.csv", csv.getBytes(StandardCharsets.UTF_8));
+        assertEquals(1, res.rows().size(), "rows with only Sr.no / formulas are skipped");
+    }
+
+    @Test
+    void southCoHeadingsAreRecognised() {
+        String csv = "Sr.No.,Case No,Date of Creation,Case Owner,Status,Scenario,Issue Description\n"
+                + "1,4000001,6/1/2026,Test Agent,Closed,Testing,Made-up description\n";
+        SpreadsheetReader.ReadResult res = SpreadsheetReader.read("test.csv", csv.getBytes(StandardCharsets.UTF_8));
+        RawRow row = res.rows().get(0);
+        assertEquals("4000001", row.get(ImportColumns.TICKET_ID));
+        assertEquals("Test Agent", row.get(ImportColumns.ASSIGNEE));
+        assertEquals("Testing", row.get(ImportColumns.TOPIC));
+        assertEquals("Made-up description", row.get(ImportColumns.DESCRIPTION));
+        assertEquals(List.of(), res.fileIssues(), "all headings known");
+    }
+
+    @Test
     void csvWithoutRequiredHeadingsIsRefused() {
         String csv = "Ticket ID,Topic\n1,abc\n";
         assertThrows(ImportFileException.class,

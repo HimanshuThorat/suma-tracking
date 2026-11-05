@@ -3,7 +3,11 @@ package com.sumasoft.tracking.imports;
 import java.util.Locale;
 
 /**
- * The 23 columns of the monthly ticket sheet, and how their headings are recognised.
+ * The columns of the monthly ticket sheets, and how their headings are recognised.
+ * Different projects name the same column differently, for example
+ *   Codility (Zendesk):    "Ticket ID", "Assignee", "Topic"
+ *   SouthCo  (Keypanion):  "Case No",   "Case Owner", "Scenario", "Issue Description"
+ * A new project with other headings only needs its names added to recognise() below.
  * Headings are compared without capital letters, spaces or punctuation, so
  * "Escalated ( Yes / No )", "escalated" and "ESCALATED" all mean the same column.
  */
@@ -32,6 +36,7 @@ public final class ImportColumns {
     public static final String SUBCATEGORY = "Subcategory";
     public static final String REQUESTER = "Requester";
     public static final String REQUESTER_ROLE = "Requester Role";
+    public static final String DESCRIPTION = "Description";
 
     /** Columns without which the file cannot be imported. */
     public static final String[] REQUIRED = {TICKET_ID, CREATED_DATE, STATUS};
@@ -56,11 +61,11 @@ public final class ImportColumns {
         }
         return switch (h) {
             case "srno", "sno", "srnumber", "serialno", "serialnumber", "sr" -> SR_NO;
-            case "ticketid", "ticketno", "ticketnumber" -> TICKET_ID;
+            case "ticketid", "ticketno", "ticketnumber", "caseno", "casenumber", "caseid" -> TICKET_ID;
             case "dateofcreation", "createddate", "creationdate" -> CREATED_DATE;
             case "timeframe" -> TIMEFRAME;
             case "timeofcreation", "createdtime", "creationtime" -> CREATED_TIME;
-            case "assignee", "assignedto" -> ASSIGNEE;
+            case "assignee", "assignedto", "caseowner", "owner" -> ASSIGNEE;
             case "day" -> DAY;
             case "dateofclosure", "closeddate", "closuredate" -> CLOSED_DATE;
             case "timeofclosure", "closedtime", "closuretime" -> CLOSED_TIME;
@@ -71,11 +76,12 @@ public final class ImportColumns {
             case "source", "channel" -> SOURCE;
             case "issuetype" -> ISSUE_TYPE;
             case "plan" -> PLAN;
-            case "topic" -> TOPIC;
+            case "topic", "scenario" -> TOPIC;
             case "category" -> CATEGORY;
             case "subcategory" -> SUBCATEGORY;
             case "requester" -> REQUESTER;
             case "requesterrole" -> REQUESTER_ROLE;
+            case "issuedescription", "description" -> DESCRIPTION;
             default -> null;
         };
     }

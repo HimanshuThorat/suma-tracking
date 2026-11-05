@@ -54,6 +54,9 @@ import java.util.Set;
  *
  *  mode DRY_RUN = "check only": the file is read and checked, the report is saved, NO ticket is changed.
  *  mode IMPORT  = the same checks, then new tickets are created and changed tickets are updated.
+ *  sheet        = which sheet of the workbook to read (for example "Nov26"); empty = the first sheet with headings.
+ *  The agents keep updating the monthly sheet, so the same sheet can be uploaded again and again:
+ *  new tickets are created, changed tickets are updated, the rest is "unchanged".
  *
  * Rules:
  *  - Who: Super Admin, Client Admin of the project's client, or the Project Manager of the project.
@@ -106,7 +109,7 @@ public class TicketImportService {
 
     // ================================================================ upload
 
-    public ImportBatchResponse importTickets(Long projectId, String modeText, MultipartFile file) {
+    public ImportBatchResponse importTickets(Long projectId, String modeText, String sheetName, MultipartFile file) {
         AuthenticatedUser me = access.current();
         String mode = modeText == null ? "DRY_RUN" : modeText.trim().toUpperCase(Locale.ROOT);
         if (!mode.equals("DRY_RUN") && !mode.equals("IMPORT")) {
@@ -118,7 +121,7 @@ public class TicketImportService {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Please choose a file to upload");
         }
         if (file.getSize() > ImportUploadConfig.MAX_FILE_BYTES) {
-            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "The file is bigger than 10 MB");
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "The file is bigger than 25 MB");
         }
         byte[] content;
         try {
@@ -128,16 +131,21 @@ public class TicketImportService {
         }
         String fileName = cleanFileName(file.getOriginalFilename());
         String sha = sha256(content);
+        String sheet = (sheetName == null || sheetName.isBlank()) ? null : sheetName.strip();
+        if (sheet != null && sheet.length() > 100) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "The sheet name is too long");
+        }
 
         // Step 1: remember that this upload started (stays even if the work fails)
         Long batchId = tx.execute(s -> jdbc.queryForObject(
                 "INSERT INTO import_batches (project_id, mode, status, source_system, file_name, file_sha256, "
-                        + "file_size_bytes, uploaded_by_user_id) VALUES (?, ?, 'RUNNING', ?, ?, ?, ?, ?) RETURNING id",
-                Long.class, project.id(), mode, project.sourceSystem(), fileName, sha, (long) content.length, me.userId()));
+                        + "file_size_bytes, sheet_name, uploaded_by_user_id) VALUES (?, ?, 'RUNNING', ?, ?, ?, ?, ?, ?) RETURNING id",
+                Long.class, project.id(), mode, project.sourceSystem(), fileName, sha, (long) content.length, sheet,
+                me.userId()));
 
         try {
             // Step 2: all the work in one transaction
-            tx.executeWithoutResult(s -> runImport(me, project, mode, batchId, fileName, sha, content));
+            tx.executeWithoutResult(s -> runImport(me, project, mode, batchId, fileName, sheet, sha, content));
         } catch (ImportFileException e) {
             markFailed(project, mode, batchId, e.getMessage());
         } catch (RuntimeException e) {
@@ -149,17 +157,18 @@ public class TicketImportService {
 
     /** Step 2. Everything here is saved together, or not at all. */
     private void runImport(AuthenticatedUser me, ProjectInfo project, String mode, Long batchId,
-                           String fileName, String sha, byte[] content) {
+                           String fileName, String sheetName, String sha, byte[] content) {
         boolean apply = mode.equals("IMPORT");
         Instant now = Instant.now();
 
-        SpreadsheetReader.ReadResult sheet = SpreadsheetReader.read(fileName, content);
+        SpreadsheetReader.ReadResult sheet = SpreadsheetReader.read(fileName, content, sheetName);
         List<ImportIssue> issues = new ArrayList<>(sheet.fileIssues());
 
         // The same file was already imported for this project? (Harmless, but good to know.)
         List<Long> sameFile = jdbc.queryForList(
                 "SELECT id FROM import_batches WHERE project_id = ? AND file_sha256 = ? AND mode = 'IMPORT' "
-                        + "AND status = 'COMPLETED' AND id <> ? ORDER BY id", Long.class, project.id(), sha, batchId);
+                        + "AND status = 'COMPLETED' AND id <> ? AND sheet_name IS NOT DISTINCT FROM ? ORDER BY id",
+                Long.class, project.id(), sha, batchId, sheet.sheetName());
         if (!sameFile.isEmpty()) {
             issues.add(ImportIssue.warning(0, null, null, "This exact file was already imported (import number "
                     + sameFile.get(sameFile.size() - 1) + "). Unchanged tickets are simply skipped", fileName));

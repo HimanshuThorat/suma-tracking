@@ -6,13 +6,13 @@ import org.springframework.context.annotation.Configuration;
 
 /**
  * Upload size limits for the import files (Step 32b).
- * One file may be at most 10 MB (a monthly sheet is usually well under 1 MB).
+ * One file may be at most 25 MB (the full Codility workbook with all months is about 9 MB).
  * Bigger uploads are refused before they reach our code.
  */
 @Configuration
 public class ImportUploadConfig {
 
-    public static final long MAX_FILE_BYTES = 10L * 1024 * 1024;
+    public static final long MAX_FILE_BYTES = 25L * 1024 * 1024;
 
     @Bean
     public MultipartConfigElement multipartConfigElement() {

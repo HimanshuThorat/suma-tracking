@@ -14,7 +14,8 @@ import java.util.List;
 
 /**
  * Web addresses (API) for importing tickets from Excel / CSV.
- *   POST /api/imports/tickets      (form upload: file, projectId, mode = DRY_RUN or IMPORT)
+ *   POST /api/imports/tickets      (form upload: file, projectId, mode = DRY_RUN or IMPORT,
+ *                                   sheet = name of the month sheet, e.g. Nov26 (optional))
  *                                   DRY_RUN = check only, nothing is saved except the check report
  *   GET  /api/imports?projectId=1  -> list of imports (newest first)
  *   GET  /api/imports/{id}         -> one import with every issue found
@@ -32,8 +33,9 @@ public class ImportController {
     @PostMapping(value = "/tickets", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
     public ImportBatchResponse importTickets(@RequestParam("file") MultipartFile file,
                                              @RequestParam("projectId") Long projectId,
-                                             @RequestParam(value = "mode", defaultValue = "DRY_RUN") String mode) {
-        return service.importTickets(projectId, mode, file);
+                                             @RequestParam(value = "mode", defaultValue = "DRY_RUN") String mode,
+                                             @RequestParam(value = "sheet", required = false) String sheet) {
+        return service.importTickets(projectId, mode, sheet, file);
     }
 
     @GetMapping

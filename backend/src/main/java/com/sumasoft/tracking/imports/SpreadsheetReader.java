@@ -30,7 +30,9 @@ import java.util.Set;
  * Reads an uploaded .xlsx, .xls or .csv file into plain rows (RawRow). It does NOT check the values;
  * that is ImportRowParser's job.
  *  - The heading row is searched for in the first 10 rows (title rows above it are fine).
- *  - In a workbook, the first sheet that has the required headings is used.
+ *  - In a workbook you may name the sheet to read (for example "Nov26"); when no name is given,
+ *    the first sheet that has the required headings is used.
+ *  - Rows without Ticket ID, Date of Creation AND Status are empty template rows and are skipped silently.
  *  - Real Excel dates in the 4 date/time columns are passed as "@D:yyyy-MM-ddTHH:mm:ss".
  *  - Formulas are NOT recalculated: the value Excel saved is used ("#VALUE!" when Excel shows an error).
  *  - At most 20 000 data rows.
@@ -52,6 +54,11 @@ public final class SpreadsheetReader {
     }
 
     public static ReadResult read(String fileName, byte[] content) {
+        return read(fileName, content, null);
+    }
+
+    /** sheetName: which sheet of a workbook to read (capital letters and spaces ignored); null = automatic. */
+    public static ReadResult read(String fileName, byte[] content, String sheetName) {
         if (content == null || content.length == 0) {
             throw new ImportFileException("The file is empty");
         }
@@ -60,16 +67,30 @@ public final class SpreadsheetReader {
             return fromGrid(null, readCsv(content));
         }
         if (name.endsWith(".xlsx") || name.endsWith(".xls")) {
-            return readWorkbook(content);
+            return readWorkbook(content, sheetName);
         }
         throw new ImportFileException("Only .xlsx, .xls and .csv files can be imported");
     }
 
     // ================================================================ Excel
 
-    private static ReadResult readWorkbook(byte[] content) {
+    private static ReadResult readWorkbook(byte[] content, String sheetName) {
         try (Workbook wb = WorkbookFactory.create(new ByteArrayInputStream(content))) {
             DataFormatter formatter = new DataFormatter(Locale.ENGLISH);
+            if (sheetName != null && !sheetName.isBlank()) {
+                String wanted = sheetKey(sheetName);
+                List<String> names = new ArrayList<>();
+                for (int s = 0; s < wb.getNumberOfSheets(); s++) {
+                    Sheet sheet = wb.getSheetAt(s);
+                    names.add(sheet.getSheetName());
+                    if (sheetKey(sheet.getSheetName()).equals(wanted)) {
+                        return fromSheet(sheet, formatter);
+                    }
+                }
+                String list = String.join(", ", names);
+                throw new ImportFileException("Sheet '" + sheetName.strip() + "' was not found. Sheets in this file: "
+                        + (list.length() <= 350 ? list : list.substring(0, 350) + " ..."));
+            }
             ImportFileException firstProblem = null;
             for (int s = 0; s < wb.getNumberOfSheets(); s++) {
                 Sheet sheet = wb.getSheetAt(s);
@@ -87,7 +108,8 @@ public final class SpreadsheetReader {
         } catch (ImportFileException e) {
             throw e;
         } catch (IOException | RuntimeException e) {
-            throw new ImportFileException("The file could not be read as an Excel workbook");
+            throw new ImportFileException("The file could not be read as an Excel workbook. "
+                    + "Tip: download/save only this month's sheet as CSV and upload that file instead");
         }
     }
 
@@ -139,7 +161,7 @@ public final class SpreadsheetReader {
                     empty = false;
                 }
             }
-            if (empty) {
+            if (empty || isTemplateRow(values)) {
                 continue;
             }
             if (rows.size() >= MAX_ROWS) {
@@ -294,7 +316,7 @@ public final class SpreadsheetReader {
                     }
                 }
             }
-            if (values.isEmpty()) {
+            if (values.isEmpty() || isTemplateRow(values)) {
                 continue;
             }
             if (rows.size() >= MAX_ROWS) {
@@ -333,6 +355,22 @@ public final class SpreadsheetReader {
         boolean hasRequired() {
             return Arrays.stream(ImportColumns.REQUIRED).allMatch(columns::containsValue);
         }
+    }
+
+    /** A row with only Sr.no / formulas filled in but no Ticket ID, Date of Creation and Status. */
+    private static boolean isTemplateRow(Map<String, String> values) {
+        return isBlank(values.get(ImportColumns.TICKET_ID))
+                && isBlank(values.get(ImportColumns.CREATED_DATE))
+                && isBlank(values.get(ImportColumns.STATUS));
+    }
+
+    private static boolean isBlank(String v) {
+        return v == null || v.isBlank();
+    }
+
+    /** "Nov 26" = "nov26" = "NOV26". */
+    private static String sheetKey(String name) {
+        return name.toLowerCase(Locale.ROOT).replaceAll("\\s+", "");
     }
 
     private static List<ImportIssue> unknownColumnWarnings(List<String> unknown) {

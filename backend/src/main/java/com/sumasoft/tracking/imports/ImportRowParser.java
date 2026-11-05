@@ -248,6 +248,7 @@ public class ImportRowParser {
                 text(row, ImportColumns.TOPIC, 200, n, ticketId, issues),
                 text(row, ImportColumns.CATEGORY, 100, n, ticketId, issues),
                 text(row, ImportColumns.SUBCATEGORY, 100, n, ticketId, issues),
+                text(row, ImportColumns.DESCRIPTION, 4000, n, ticketId, issues),
                 cut(rawTimeframe, 50),
                 cut(rawDay, 20),
                 cut(rawResolution, 20));

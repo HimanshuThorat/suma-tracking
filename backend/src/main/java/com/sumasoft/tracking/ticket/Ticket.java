@@ -222,6 +222,7 @@ public class Ticket {
         diff(c, "topic", topic, v.topic());
         diff(c, "category", category, v.category());
         diff(c, "subcategory", subcategory, v.subcategory());
+        diff(c, "description", description, v.description());
         diff(c, "createdAtSource", text(createdAtSource), text(v.createdAtSource()));
         diff(c, "resolvedAt", text(resolvedAt), text(v.resolvedAt()));
         diff(c, "closedAt", text(closedAt), text(v.closedAt()));
@@ -247,6 +248,7 @@ public class Ticket {
             topic = v.topic();
             category = v.category();
             subcategory = v.subcategory();
+            description = v.description();
             createdAtSource = v.createdAtSource();
             resolvedAt = v.resolvedAt();
             closedAt = v.closedAt();

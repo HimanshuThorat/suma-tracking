@@ -26,6 +26,7 @@ public record ImportedTicketValues(
         String topic,
         String category,
         String subcategory,
+        String description,
         String timeframeRaw,
         String dayRaw,
         String resolutionTimeRaw
