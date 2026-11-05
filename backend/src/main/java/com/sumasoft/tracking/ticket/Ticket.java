@@ -17,11 +17,16 @@ import jakarta.persistence.Table;
 import jakarta.persistence.Version;
 
 import java.time.Instant;
+import java.util.ArrayList;
+import java.util.List;
+import java.util.Objects;
 
 /**
  * One row of the "tickets" table (Flyway V6). Holds the FRD fields and all 23 original Excel columns.
  * The client and project of a ticket never change (the database also guarantees they match).
  * (The JSON column extra_fields is not used by the program yet.)
+ * Status / assignee / field changes are made only through the methods below, so the rules
+ * about resolved / closed times are always applied the same way.
  */
 @Entity
 @Table(name = "tickets")
@@ -175,6 +180,89 @@ public class Ticket {
         t.createdAtSource = now;
         t.updatedAtSource = now;
         return t;
+    }
+
+    /** One changed field (for the ticket history). */
+    public record FieldChange(String field, String oldValue, String newValue) {
+    }
+
+    /**
+     * Change the status and keep the times correct:
+     *  - leaving OPEN for the first time sets "first response"
+     *  - a RESOLVED status sets "resolved at"
+     *  - a CLOSED-group status (Closed, Merged) sets "closed at" and "closed by"
+     *  - going back to an open/pending status clears resolved/closed (history keeps the old values)
+     */
+    public void changeStatus(TicketStatus newStatus, AppUser actor, Instant now) {
+        if (firstResponseAt == null && "OPEN".equals(status.getCode()) && !"OPEN".equals(newStatus.getCode())) {
+            firstResponseAt = now;
+        }
+        String group = newStatus.getStatusGroup();
+        if ("RESOLVED".equals(group)) {
+            if (resolvedAt == null) {
+                resolvedAt = now;
+            }
+            closedAt = null;
+            closedBy = null;
+            closedByNameRaw = null;
+        } else if ("CLOSED".equals(group)) {
+            if (closedAt == null) {
+                closedAt = now;
+                closedBy = actor;
+                closedByNameRaw = null;
+            }
+        } else {
+            resolvedAt = null;
+            closedAt = null;
+            closedBy = null;
+            closedByNameRaw = null;
+        }
+        status = newStatus;
+        updatedAtSource = now;
+    }
+
+    /** Assign to an employee (or to nobody when null). */
+    public void assignTo(AppUser newAssignee, Instant now) {
+        assignee = newAssignee;
+        assigneeNameRaw = null;
+        updatedAtSource = now;
+    }
+
+    /** Edit the descriptive fields. Returns the list of fields that really changed. */
+    public List<FieldChange> applyEdit(TicketChangeDtos.TicketUpdateRequest r, TicketPriority newPriority, Instant now) {
+        List<FieldChange> changes = new ArrayList<>();
+        subject = track(changes, "subject", subject, clean(r.subject()));
+        description = track(changes, "description", description, clean(r.description()));
+        category = track(changes, "category", category, clean(r.category()));
+        subcategory = track(changes, "subcategory", subcategory, clean(r.subcategory()));
+        issueType = track(changes, "issueType", issueType, clean(r.issueType()));
+        topic = track(changes, "topic", topic, clean(r.topic()));
+        plan = track(changes, "plan", plan, clean(r.plan()));
+        channel = track(changes, "channel", channel, clean(r.channel()));
+        requesterName = track(changes, "requesterName", requesterName, clean(r.requesterName()));
+        requesterRole = track(changes, "requesterRole", requesterRole, clean(r.requesterRole()));
+        String oldPriority = priority == null ? null : priority.getCode();
+        String newPriorityCode = newPriority == null ? null : newPriority.getCode();
+        if (!Objects.equals(oldPriority, newPriorityCode)) {
+            changes.add(new FieldChange("priority", oldPriority, newPriorityCode));
+            priority = newPriority;
+        }
+        boolean newEscalated = Boolean.TRUE.equals(r.escalated());
+        if (escalated != newEscalated) {
+            changes.add(new FieldChange("escalated", String.valueOf(escalated), String.valueOf(newEscalated)));
+            escalated = newEscalated;
+        }
+        if (!changes.isEmpty()) {
+            updatedAtSource = now;
+        }
+        return changes;
+    }
+
+    private static String track(List<FieldChange> changes, String field, String oldValue, String newValue) {
+        if (!Objects.equals(oldValue, newValue)) {
+            changes.add(new FieldChange(field, oldValue, newValue));
+        }
+        return newValue;
     }
 
     static String clean(String value) {
