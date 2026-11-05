@@ -182,6 +182,105 @@ public class Ticket {
         return t;
     }
 
+    /**
+     * A ticket that comes from an imported Excel/CSV file (Step 32b).
+     * The times come from the file (already checked by the import row checker).
+     */
+    public static Ticket createImported(Project project, String sourceSystem, ImportedTicketValues v,
+                                        TicketStatus status, TicketPriority priority,
+                                        AppUser assignee, AppUser closedBy, Long batchId) {
+        Ticket t = new Ticket();
+        t.client = project.getClient();
+        t.project = project;
+        t.sourceSystem = sourceSystem;
+        t.externalTicketId = v.externalTicketId();
+        t.importChanges(v, status, priority, assignee, closedBy, batchId, true);
+        return t;
+    }
+
+    /**
+     * Compare this ticket with a row of an import file.
+     * Returns the fields that differ. When apply = true the new values are also stored
+     * (apply = false is used by "check only" so nothing is changed).
+     */
+    public List<FieldChange> importChanges(ImportedTicketValues v, TicketStatus newStatus, TicketPriority newPriority,
+                                           AppUser newAssignee, AppUser newClosedBy, Long batchId, boolean apply) {
+        List<FieldChange> c = new ArrayList<>();
+        diff(c, "status", status == null ? null : status.getCode(), newStatus.getCode());
+        diff(c, "priority", priority == null ? null : priority.getCode(), newPriority == null ? null : newPriority.getCode());
+        diff(c, "assignee", userId(assignee), userId(newAssignee));
+        diff(c, "assigneeName", assigneeNameRaw, v.assigneeName());
+        diff(c, "closedBy", userId(closedBy), userId(newClosedBy));
+        diff(c, "closedByName", closedByNameRaw, v.closedByName());
+        diff(c, "requesterName", requesterName, v.requesterName());
+        diff(c, "requesterRole", requesterRole, v.requesterRole());
+        diff(c, "channel", channel, v.channel());
+        diff(c, "escalated", String.valueOf(escalated), String.valueOf(v.escalated()));
+        diff(c, "satisfactionRating", satisfactionRating, v.satisfactionRating());
+        diff(c, "issueType", issueType, v.issueType());
+        diff(c, "plan", plan, v.plan());
+        diff(c, "topic", topic, v.topic());
+        diff(c, "category", category, v.category());
+        diff(c, "subcategory", subcategory, v.subcategory());
+        diff(c, "createdAtSource", text(createdAtSource), text(v.createdAtSource()));
+        diff(c, "resolvedAt", text(resolvedAt), text(v.resolvedAt()));
+        diff(c, "closedAt", text(closedAt), text(v.closedAt()));
+        diff(c, "timeframe", timeframeRaw, v.timeframeRaw());
+        diff(c, "day", dayRaw, v.dayRaw());
+        diff(c, "resolutionTime", resolutionTimeRaw, v.resolutionTimeRaw());
+        diff(c, "srNo", importRowNumber == null ? null : importRowNumber.toString(),
+                v.importRowNumber() == null ? null : v.importRowNumber().toString());
+        if (apply && (!c.isEmpty() || id == null)) {
+            status = newStatus;
+            priority = newPriority;
+            assignee = newAssignee;
+            assigneeNameRaw = v.assigneeName();
+            closedBy = newClosedBy;
+            closedByNameRaw = v.closedByName();
+            requesterName = v.requesterName();
+            requesterRole = v.requesterRole();
+            channel = v.channel();
+            escalated = v.escalated();
+            satisfactionRating = v.satisfactionRating();
+            issueType = v.issueType();
+            plan = v.plan();
+            topic = v.topic();
+            category = v.category();
+            subcategory = v.subcategory();
+            createdAtSource = v.createdAtSource();
+            resolvedAt = v.resolvedAt();
+            closedAt = v.closedAt();
+            timeframeRaw = v.timeframeRaw();
+            dayRaw = v.dayRaw();
+            resolutionTimeRaw = v.resolutionTimeRaw();
+            importRowNumber = v.importRowNumber();
+            importBatchId = batchId;
+            Instant last = v.createdAtSource();
+            if (v.resolvedAt() != null && v.resolvedAt().isAfter(last)) {
+                last = v.resolvedAt();
+            }
+            if (v.closedAt() != null && v.closedAt().isAfter(last)) {
+                last = v.closedAt();
+            }
+            updatedAtSource = last;
+        }
+        return c;
+    }
+
+    private static void diff(List<FieldChange> changes, String field, String oldValue, String newValue) {
+        if (!Objects.equals(oldValue, newValue)) {
+            changes.add(new FieldChange(field, oldValue, newValue));
+        }
+    }
+
+    private static String userId(AppUser u) {
+        return u == null ? null : String.valueOf(u.getId());
+    }
+
+    private static String text(Instant i) {
+        return i == null ? null : i.toString();
+    }
+
     /** One changed field (for the ticket history). */
     public record FieldChange(String field, String oldValue, String newValue) {
     }
