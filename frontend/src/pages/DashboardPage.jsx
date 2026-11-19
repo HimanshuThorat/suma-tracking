@@ -30,7 +30,8 @@ function rangeFor(key, custom) {
 
 export default function DashboardPage() {
   const [projects, setProjects] = useState([])
-  const [projectId, setProjectId] = useState('')
+  // A link like #/dashboard?project=3 (from Clients & projects) opens one project directly.
+  const [projectId, setProjectId] = useState(() => new URLSearchParams(window.location.hash.split('?')[1] || '').get('project') || '')
   const [period, setPeriod] = useState('30')
   const [custom, setCustom] = useState({ from: addDays(todayIso(), -29), to: todayIso() })
   const [data, setData] = useState(null)

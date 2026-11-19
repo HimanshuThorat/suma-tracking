@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState } from 'react'
 import { api } from '../api.js'
 import { fmtDateTime, fmtNumber } from '../format.js'
 
-export default function ImportPage() {
+export default function ImportPage({ embedded }) {
   const [projects, setProjects] = useState([])
   const [projectId, setProjectId] = useState('')
   const [file, setFile] = useState(null)
@@ -50,16 +50,18 @@ export default function ImportPage() {
   const project = projects.find((p) => String(p.id) === String(projectId))
 
   return (
-    <div className="page narrow">
-      <header className="page-head">
-        <div>
-          <h1>Import sheet</h1>
-          <p className="muted">
-            Upload the agents&apos; daily sheet. Check it first: nothing is saved. Then import: new tickets are created,
-            changed tickets are updated, and the rest is left as it is. Uploading the same sheet again never makes duplicates.
-          </p>
-        </div>
-      </header>
+    <div className={embedded ? 'stack-gap' : 'page narrow'}>
+      {!embedded && (
+        <header className="page-head">
+          <div>
+            <h1>Import sheet</h1>
+          </div>
+        </header>
+      )}
+      <p className="muted">
+        Upload the agents&apos; daily sheet. Check it first: nothing is saved. Then import: new tickets are created,
+        changed tickets are updated, and the rest is left as it is. Uploading the same sheet again never makes duplicates.
+      </p>
 
       <section className="panel">
         <div className="import-form">

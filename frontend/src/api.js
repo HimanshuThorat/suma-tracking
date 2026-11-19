@@ -74,20 +74,27 @@ async function request(method, path, { body, form, query } = {}) {
 }
 
 export const api = {
+  // Login
   login: (email, password) => request('POST', '/api/auth/login', { body: { email, password } }),
   logout: () => request('POST', '/api/auth/logout'),
   me: () => request('GET', '/api/auth/me'),
   changePassword: (currentPassword, newPassword) =>
     request('POST', '/api/auth/change-password', { body: { currentPassword, newPassword } }),
 
-  projects: () => request('GET', '/api/projects'),
-  statuses: () => request('GET', '/api/ticket-statuses'),
+  // Dashboard and reports
   dashboard: (query) => request('GET', '/api/dashboard', { query }),
+  workload: () => request('GET', '/api/workload'),
 
+  // Tickets
+  statuses: () => request('GET', '/api/ticket-statuses'),
   tickets: (query) => request('GET', '/api/tickets', { query }),
   ticket: (id) => request('GET', `/api/tickets/${id}`),
   ticketHistory: (id) => request('GET', `/api/tickets/${id}/history`),
+  changeStatus: (id, statusCode, note) => request('POST', `/api/tickets/${id}/status`, { body: { statusCode, note } }),
+  assignTicket: (id, assigneeUserId, note) => request('POST', `/api/tickets/${id}/assign`, { body: { assigneeUserId, note } }),
+  escalateTicket: (id, note) => request('POST', `/api/tickets/${id}/escalate`, { body: { note } }),
 
+  // Excel import
   importTickets: ({ file, projectId, mode, sheet }) => {
     const form = new FormData()
     form.append('file', file)
@@ -98,4 +105,56 @@ export const api = {
   },
   imports: (projectId) => request('GET', '/api/imports', { query: { projectId } }),
   importDetails: (id) => request('GET', `/api/imports/${id}`),
+
+  // Client Management
+  clients: () => request('GET', '/api/clients'),
+  adminClients: (includeRemoved) => request('GET', '/api/admin/clients', { query: { includeRemoved } }),
+  addClient: (body) => request('POST', '/api/admin/clients', { body }),
+  updateClient: (id, body) => request('PUT', `/api/admin/clients/${id}`, { body }),
+  removeClient: (id) => request('DELETE', `/api/admin/clients/${id}`),
+  restoreClient: (id) => request('POST', `/api/admin/clients/${id}/restore`),
+
+  // Project Management
+  projects: () => request('GET', '/api/projects'),
+  createProject: (body) => request('POST', '/api/projects', { body }),
+  updateProject: (id, body) => request('PUT', `/api/projects/${id}`, { body }),
+  activateProject: (id) => request('POST', `/api/projects/${id}/activate`),
+  deactivateProject: (id) => request('POST', `/api/projects/${id}/deactivate`),
+  closeProject: (id) => request('POST', `/api/projects/${id}/close`),
+  projectTeam: (id) => request('GET', `/api/projects/${id}/team`),
+  assignToProject: (projectId, body) => request('PUT', `/api/projects/${projectId}/team`, { body }),
+  removeFromProject: (projectId, userId) => request('POST', `/api/projects/${projectId}/team/${userId}/remove`),
+
+  // Team Management
+  users: () => request('GET', '/api/users'),
+  createUser: (body) => request('POST', '/api/users', { body }),
+  updateUser: (id, body) => request('PUT', `/api/users/${id}`, { body }),
+  activateUser: (id) => request('POST', `/api/users/${id}/activate`),
+  deactivateUser: (id) => request('POST', `/api/users/${id}/deactivate`),
+  resetPassword: (id, newPassword) => request('POST', `/api/users/${id}/reset-password`, { body: { newPassword } }),
+  userProjects: (id) => request('GET', `/api/users/${id}/projects`),
+
+  // SLA Management (Step 37)
+  slaOverview: (query) => request('GET', '/api/sla/overview', { query }),
+  slaSettings: (projectId) => request('GET', `/api/sla/settings/${projectId}`),
+  saveSlaSettings: (projectId, body) => request('PUT', `/api/sla/settings/${projectId}`, { body }),
+
+  // Notifications (Step 37)
+  notifications: (unreadOnly) => request('GET', '/api/notifications', { query: { unreadOnly } }),
+  unreadCount: () => request('GET', '/api/notifications/unread-count'),
+  markNotificationRead: (id) => request('POST', `/api/notifications/${id}/read`),
+  markAllNotificationsRead: () => request('POST', '/api/notifications/read-all'),
+
+  // Automation (Step 37)
+  automationRules: () => request('GET', '/api/automation/rules'),
+  setAutomationRule: (code, enabled) => request('PUT', `/api/automation/rules/${code}`, { body: { enabled } }),
+  runAutomation: () => request('POST', '/api/automation/run'),
+  automationRuns: () => request('GET', '/api/automation/runs'),
+  automationActions: (runId) => request('GET', `/api/automation/runs/${runId}/actions`),
+
+  // Security
+  roles: () => request('GET', '/api/roles'),
+  createRole: (body) => request('POST', '/api/roles', { body }),
+  updateRole: (code, body) => request('PUT', `/api/roles/${code}`, { body }),
+  audit: (query) => request('GET', '/api/audit', { query }),
 }

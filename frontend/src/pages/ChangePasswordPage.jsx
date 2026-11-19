@@ -11,6 +11,14 @@ export default function ChangePasswordPage({ user, onDone, onLogout }) {
   async function submit(e) {
     e.preventDefault()
     setError('')
+    if (!current) {
+      setError('Enter your current (temporary) password.')
+      return
+    }
+    if (next.length < 10 || !/[A-Za-z]/.test(next) || !/[0-9]/.test(next) || /\s/.test(next)) {
+      setError('The new password must be at least 10 characters with at least one letter and one digit, and no spaces.')
+      return
+    }
     if (next !== again) {
       setError('The two new passwords are not the same.')
       return

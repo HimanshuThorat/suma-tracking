@@ -1,15 +1,21 @@
 import { useState } from 'react'
 import { api, setToken } from '../api.js'
+import { rules } from '../validation.js'
 
 export default function LoginPage({ onLoggedIn }) {
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
   const [error, setError] = useState('')
+  const [emailErr, setEmailErr] = useState('')
   const [busy, setBusy] = useState(false)
 
   async function submit(e) {
     e.preventDefault()
     setError('')
+    const emailError = rules.email('Email', true)(email)
+    setEmailErr(emailError)
+    if (emailError) return
+    if (!password) { setError('Enter your password.'); return }
     setBusy(true)
     try {
       const res = await api.login(email.trim(), password)
@@ -34,12 +40,15 @@ export default function LoginPage({ onLoggedIn }) {
         </div>
       </section>
       <section className="login-form-wrap">
-        <form className="login-form" onSubmit={submit}>
+        <form className="login-form" onSubmit={submit} noValidate>
           <h2>Sign in</h2>
           <p className="muted">Use the email and password given by your administrator.</p>
-          <label className="field">
+          <label className={`field${emailErr ? ' invalid' : ''}`}>
             <span>Email</span>
-            <input type="email" autoComplete="username" value={email} onChange={(e) => setEmail(e.target.value)} required />
+            <input type="email" autoComplete="username" value={email} placeholder="name@sumasoft.com" aria-invalid={Boolean(emailErr)}
+              onChange={(e) => { setEmail(e.target.value); if (emailErr) setEmailErr(rules.email('Email', true)(e.target.value)) }}
+              onBlur={() => email && setEmailErr(rules.email('Email', true)(email))} />
+            {emailErr && <small className="field-error" role="alert">{'\u26a0 '}{emailErr}</small>}
           </label>
           <label className="field">
             <span>Password</span>

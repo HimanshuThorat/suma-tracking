@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useCallback, useEffect, useState } from 'react'
 import { api } from '../api.js'
 import { GROUP_COLORS, GROUP_LABELS, fmtDateTime, fmtMinutes, fmtNumber } from '../format.js'
 
@@ -43,17 +43,34 @@ export default function TicketsPage() {
   }
 
   const set = (k) => (e) => setFilters({ ...filters, [k]: e.target.value })
+  const closeDrawer = useCallback(() => setOpenId(null), [])
+
+  function quick(statusGroup, escalated) {
+    const next = { ...filters, statusGroup, escalated }
+    setFilters(next)
+    setApplied(next)
+    setPage(0)
+  }
 
   return (
     <div className="page">
       <header className="page-head">
         <div>
-          <h1>Tickets</h1>
+          <h1>Ticket Management</h1>
           <p className="muted">
             {data ? `${fmtNumber(data.totalItems)} tickets match` : 'Loading tickets'}. Newest first. Click a ticket to see its details and history.
           </p>
         </div>
       </header>
+
+      <div className="quick" role="group" aria-label="Quick filters">
+        <button type="button" className={!applied.statusGroup && !applied.escalated ? 'on' : ''} onClick={() => quick('', '')}>All tickets</button>
+        <button type="button" className={applied.statusGroup === 'PENDING' ? 'on' : ''} onClick={() => quick('PENDING', '')}>Pending</button>
+        <button type="button" className={applied.statusGroup === 'OPEN' ? 'on' : ''} onClick={() => quick('OPEN', '')}>Open</button>
+        <button type="button" className={applied.escalated === 'true' ? 'on' : ''} onClick={() => quick('', 'true')}>Escalated</button>
+        <button type="button" className={applied.statusGroup === 'RESOLVED' ? 'on' : ''} onClick={() => quick('RESOLVED', '')}>Resolved</button>
+        <button type="button" className={applied.statusGroup === 'CLOSED' ? 'on' : ''} onClick={() => quick('CLOSED', '')}>Closed</button>
+      </div>
 
       <form className="toolbar" onSubmit={search}>
         <label className="field grow">
@@ -110,7 +127,7 @@ export default function TicketsPage() {
                 <th scope="col">Topic</th>
                 <th scope="col">Source</th>
                 <th scope="col">Created</th>
-                <th scope="col" className="num">Solve time</th>
+                <th scope="col" className="num">Solve time or age</th>
               </tr>
             </thead>
             <tbody>
@@ -122,7 +139,7 @@ export default function TicketsPage() {
                     <div className="strong">{t.externalTicketId || t.ticketCode}</div>
                     <div className="muted small">{t.ticketCode}{t.escalated ? ', escalated' : ''}</div>
                   </td>
-                  <td>{t.projectName}</td>
+                  <td>{t.projectName}<div className="muted small">{titleCase(t.sourceSystem)}</div></td>
                   <td><StatusBadge group={t.statusGroup} name={t.statusName} /></td>
                   <td>{t.assigneeName || <span className="muted">Unassigned</span>}</td>
                   <td className="clip">{t.topic || t.subject || <span className="muted">-</span>}</td>
@@ -146,7 +163,7 @@ export default function TicketsPage() {
         )}
       </section>
 
-      {openId && <TicketDrawer id={openId} onClose={() => setOpenId(null)} />}
+      {openId && <TicketDrawer id={openId} onClose={closeDrawer} onChanged={() => setApplied({ ...applied })} />}
     </div>
   )
 }
@@ -157,20 +174,23 @@ export function StatusBadge({ group, name }) {
   )
 }
 
-function TicketDrawer({ id, onClose }) {
+function TicketDrawer({ id, onClose, onChanged }) {
   const [t, setT] = useState(null)
   const [history, setHistory] = useState([])
   const [error, setError] = useState('')
+  const [version, setVersion] = useState(0)
 
   useEffect(() => {
-    setT(null)
     Promise.all([api.ticket(id), api.ticketHistory(id)])
       .then(([ticket, h]) => { setT(ticket); setHistory(h || []) })
       .catch((e) => setError(e.message))
+  }, [id, version])
+
+  useEffect(() => {
     const onKey = (e) => { if (e.key === 'Escape') onClose() }
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)
-  }, [id, onClose])
+  }, [onClose])
 
   return (
     <div className="drawer-back" onClick={onClose}>
@@ -186,6 +206,7 @@ function TicketDrawer({ id, onClose }) {
             </div>
             <p className="muted">{t.projectName} ({t.clientName}), from {titleCase(t.sourceSystem)}. Our number {t.ticketCode}.</p>
             {t.description && <p className="desc">{t.description}</p>}
+            <TicketActions ticket={t} onDone={() => { setVersion((v) => v + 1); onChanged() }} />
             <dl className="facts">
               <Fact k="Created" v={`${fmtDateTime(t.createdAtSource)} (${t.day})`} />
               <Fact k="Resolved" v={fmtDateTime(t.resolvedAt)} />
@@ -240,4 +261,89 @@ function describe(h) {
 
 function titleCase(s) {
   return s ? s.charAt(0) + s.slice(1).toLowerCase().replace(/_/g, ' ') : ''
+}
+
+/** Work on the ticket: change status, assign / reassign, escalate to Tier 2. The server checks who may do what. */
+function TicketActions({ ticket, onDone }) {
+  const [statuses, setStatuses] = useState([])
+  const [team, setTeam] = useState([])
+  const [status, setStatus] = useState('')
+  const [assignee, setAssignee] = useState('')
+  const [note, setNote] = useState('')
+  const [busy, setBusy] = useState('')
+  const [error, setError] = useState('')
+  const [done, setDone] = useState('')
+
+  useEffect(() => {
+    api.statuses().then((l) => setStatuses(l || [])).catch(() => setStatuses([]))
+    api.projectTeam(ticket.projectId).then((l) => setTeam(l || [])).catch(() => setTeam([]))
+  }, [ticket.projectId])
+
+  useEffect(() => {
+    setStatus(ticket.statusCode)
+    setAssignee(ticket.assigneeUserId ? String(ticket.assigneeUserId) : '')
+  }, [ticket.statusCode, ticket.assigneeUserId])
+
+  async function run(kind) {
+    setError('')
+    setDone('')
+    setBusy(kind)
+    try {
+      if (kind === 'status') {
+        await api.changeStatus(ticket.id, status, note || null)
+        setDone('Status changed.')
+      } else if (kind === 'assign') {
+        await api.assignTicket(ticket.id, assignee ? Number(assignee) : null, note || null)
+        setDone(assignee ? 'Ticket assigned.' : 'Ticket unassigned.')
+      } else {
+        await api.escalateTicket(ticket.id, note || null)
+        setDone('Escalated to Tier 2.')
+      }
+      setNote('')
+      onDone()
+    } catch (e) {
+      setError(e.message)
+    } finally {
+      setBusy('')
+    }
+  }
+
+  const finished = ticket.statusGroup === 'RESOLVED' || ticket.statusGroup === 'CLOSED'
+  return (
+    <div className="actions-box">
+      <div className="action-row">
+        <label className="field"><span>Status</span>
+          <select value={status} onChange={(e) => setStatus(e.target.value)}>
+            {statuses.map((s) => <option key={s.code} value={s.code}>{s.name}</option>)}
+          </select>
+        </label>
+        <button className="btn" type="button" disabled={!!busy || status === ticket.statusCode} onClick={() => run('status')}>
+          {busy === 'status' ? 'Saving...' : 'Change status'}
+        </button>
+      </div>
+      <div className="action-row">
+        <label className="field"><span>Assigned to</span>
+          <select value={assignee} onChange={(e) => setAssignee(e.target.value)} disabled={finished}>
+            <option value="">Nobody</option>
+            {team.map((m) => <option key={m.userId} value={m.userId}>{m.fullName}</option>)}
+          </select>
+        </label>
+        <button className="btn" type="button" disabled={!!busy || finished || assignee === (ticket.assigneeUserId ? String(ticket.assigneeUserId) : '')}
+          onClick={() => run('assign')}>
+          {busy === 'assign' ? 'Saving...' : ticket.assigneeUserId ? 'Reassign' : 'Assign'}
+        </button>
+      </div>
+      <label className="field"><span>Note for the history (optional)</span>
+        <input value={note} onChange={(e) => setNote(e.target.value)} maxLength={500} placeholder="Why this change" />
+      </label>
+      <div className="action-row end">
+        <button className="btn warn" type="button" disabled={!!busy || finished} onClick={() => run('escalate')}>
+          {busy === 'escalate' ? 'Escalating...' : 'Escalate to Tier 2'}
+        </button>
+      </div>
+      {error && <div className="alert error" role="alert">{error}</div>}
+      {done && <div className="alert ok" role="status">{done}</div>}
+      {team.length === 0 && <p className="fine">Nobody is on this project&apos;s team yet, so the ticket cannot be assigned. Add people in Team Management.</p>}
+    </div>
+  )
 }
