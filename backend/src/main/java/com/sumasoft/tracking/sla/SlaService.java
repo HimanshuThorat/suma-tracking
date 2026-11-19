@@ -139,8 +139,9 @@ public class SlaService {
                             new int[] {rs.getInt("first_response_minutes"), rs.getInt("resolution_minutes")});
                 }, projectId);
         List<Target> targets = new ArrayList<>();
+        Map<String, int[]> defaults = engine.defaultTargets();
         for (String p : SlaEngine.PRIORITIES) {
-            int[] t = saved.getOrDefault(p, SlaEngine.DEFAULT_TARGETS.get(p));
+            int[] t = saved.getOrDefault(p, defaults.getOrDefault(p, SlaEngine.DEFAULT_TARGETS.get(p)));
             targets.add(new Target(p, t[0], t[1]));
         }
         List<Holiday> holidays = jdbc.query("SELECT holiday_date, name FROM sla_holidays WHERE project_id = ? ORDER BY holiday_date",

@@ -133,7 +133,7 @@ function Overview({ projects }) {
                 {attention.map((a) => (
                   <tr key={`${a.ticketId}-${a.clock}`}>
                     <td><span className={`sla-pill ${a.state === 'BREACHED' ? 'breached' : 'at-risk'}`}>{STATE_LABEL[a.state]}</span></td>
-                    <td><div className="strong">{a.ticketNumber}</div>{a.subject && <div className="muted small clip">{a.subject}</div>}</td>
+                    <td><a className="strong" href={`#/tickets?q=${encodeURIComponent(a.ticketNumber)}&open=1`}>{a.ticketNumber}</a>{a.subject && <div className="muted small clip">{a.subject}</div>}</td>
                     <td>{a.projectName}</td>
                     <td>{PRIORITY_LABEL[a.priority] || a.priority}</td>
                     <td>{a.statusName}</td>

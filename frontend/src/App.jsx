@@ -10,7 +10,8 @@ import TicketsPage from './pages/TicketsPage.jsx'
 import TeamPage from './pages/TeamPage.jsx'
 import ReportsPage from './pages/ReportsPage.jsx'
 import SecurityPage from './pages/SecurityPage.jsx'
-import PlannedPage from './pages/PlannedPage.jsx'
+import KnowledgePage from './pages/KnowledgePage.jsx'
+import SettingsPage from './pages/SettingsPage.jsx'
 import SlaPage from './pages/SlaPage.jsx'
 import NotificationsPage from './pages/NotificationsPage.jsx'
 import AutomationPage from './pages/AutomationPage.jsx'
@@ -33,14 +34,15 @@ const MENU = [
   { key: 'notifications', label: 'Notifications', icon: 'M18 8a6 6 0 1 0-12 0c0 7-3 9-3 9h18s-3-2-3-9M13.7 21a2 2 0 0 1-3.4 0' },
   { key: 'knowledge', label: 'Knowledge Base', icon: 'M4 19.5A2.5 2.5 0 0 1 6.5 17H20V3H6.5A2.5 2.5 0 0 0 4 5.5zM4 19.5A2.5 2.5 0 0 0 6.5 22H20v-5' },
   { key: 'security', label: 'Security', icon: 'M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z', roles: ADMIN },
-  { key: 'settings', label: 'Settings', icon: 'M12 15a3 3 0 1 0 0-6 3 3 0 0 0 0 6M19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.8-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1.1-1.5 1.7 1.7 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.8 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.5-1.1 1.7 1.7 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.8.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.8V9a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1z', roles: ADMIN },
+  { key: 'settings', label: 'Settings', icon: 'M12 15a3 3 0 1 0 0-6 3 3 0 0 0 0 6M19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.8-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1.1-1.5 1.7 1.7 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.8 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.5-1.1 1.7 1.7 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.8.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.8V9a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1z' },
 ]
 
 // Older links (#/import, #/people) still work.
 const ALIASES = { import: 'integrations', people: 'team' }
 
 function pageFromHash() {
-  const raw = window.location.hash.replace('#/', '')
+  // "#/tickets?q=124628&open=1" and "#/knowledge/add-employee" keep their page
+  const raw = window.location.hash.replace('#/', '').split(/[?/]/)[0].split('?')[0]
   const key = ALIASES[raw] || raw
   return MENU.some((m) => m.key === key) ? key : 'dashboard'
 }
@@ -49,6 +51,7 @@ export default function App() {
   const [user, setUser] = useState(null)
   const [checking, setChecking] = useState(Boolean(getToken()))
   const [page, setPage] = useState(pageFromHash())
+  const [hash, setHash] = useState(window.location.hash)
   const [unread, setUnread] = useState(0)
 
   const signOut = useCallback(() => {
@@ -66,7 +69,7 @@ export default function App() {
   }, [signOut])
 
   useEffect(() => {
-    const onHash = () => setPage(pageFromHash())
+    const onHash = () => { setPage(pageFromHash()); setHash(window.location.hash) }
     window.addEventListener('hashchange', onHash)
     return () => window.removeEventListener('hashchange', onHash)
   }, [])
@@ -136,14 +139,15 @@ export default function App() {
         {current === 'clients' && <ClientsPage user={user} />}
         {current === 'projects' && <ProjectsPage user={user} />}
         {current === 'integrations' && <IntegrationsPage user={user} />}
-        {current === 'tickets' && <TicketsPage user={user} />}
+        {current === 'tickets' && <TicketsPage key={hash} user={user} />}
         {current === 'team' && <TeamPage user={user} />}
         {current === 'reports' && <ReportsPage user={user} />}
         {current === 'security' && <SecurityPage user={user} />}
         {current === 'sla' && <SlaPage user={user} />}
         {current === 'automation' && <AutomationPage user={user} />}
         {current === 'notifications' && <NotificationsPage user={user} onCountChange={setUnread} />}
-        {['knowledge', 'settings'].includes(current) && <PlannedPage which={current} />}
+        {current === 'knowledge' && <KnowledgePage user={user} />}
+        {current === 'settings' && <SettingsPage user={user} />}
       </main>
     </div>
   )

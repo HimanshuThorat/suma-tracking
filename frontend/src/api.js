@@ -152,6 +152,22 @@ export const api = {
   automationRuns: () => request('GET', '/api/automation/runs'),
   automationActions: (runId) => request('GET', `/api/automation/runs/${runId}/actions`),
 
+  // Knowledge Base (Step 38)
+  kbArticles: (all) => request('GET', '/api/kb/articles', { query: { all } }),
+  kbArticle: (slug) => request('GET', `/api/kb/articles/${encodeURIComponent(slug)}`),
+  kbSearch: (q) => request('GET', '/api/kb/search', { query: { q } }),
+  kbAsk: (question) => request('POST', '/api/kb/ask', { body: { question } }),
+  kbFeedback: (slug, helpful) => request('POST', `/api/kb/articles/${encodeURIComponent(slug)}/feedback`, { body: { helpful } }),
+  kbCreate: (body) => request('POST', '/api/kb/articles', { body }),
+  kbUpdate: (id, body) => request('PUT', `/api/kb/articles/${id}`, { body }),
+  kbVersions: (id) => request('GET', `/api/kb/articles/${id}/versions`),
+  kbUnanswered: () => request('GET', '/api/kb/unanswered'),
+
+  // Settings (Step 38)
+  settings: () => request('GET', '/api/settings'),
+  saveSettings: (values) => request('PUT', '/api/settings', { body: { values } }),
+  publicSettings: () => request('GET', '/api/settings/public'),
+
   // Security
   roles: () => request('GET', '/api/roles'),
   createRole: (body) => request('POST', '/api/roles', { body }),

@@ -4,6 +4,7 @@ import com.sumasoft.tracking.audit.AuditService;
 import com.sumasoft.tracking.auth.AccessService;
 import com.sumasoft.tracking.auth.AuthenticatedUser;
 import com.sumasoft.tracking.notification.NotificationService;
+import com.sumasoft.tracking.settings.SettingsService;
 import com.sumasoft.tracking.sla.SlaEngine;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -39,14 +40,13 @@ import java.util.concurrent.atomic.AtomicBoolean;
  *   AUTO_ASSIGN              new unassigned open ticket -> L1 member of the project with the fewest open tickets
  *   DAILY_SUMMARY            after 09:00 India time, yesterday's numbers to Super Admins and Project Managers
  * Every action is written to automation_actions (the execution log on the page). Each alert is sent once.
- * Only tickets of the last 30 days are checked, so old imported history does not flood anyone.
+ * Only tickets of the last N days (Settings, default 30) are checked, so old history does not flood anyone.
  */
 @Service
 public class AutomationService {
 
     private static final Logger log = LoggerFactory.getLogger(AutomationService.class);
     private static final ZoneId INDIA = ZoneId.of("Asia/Kolkata");
-    private static final int MAX_NOTIFICATIONS_PER_RUN = 300;
     private static final AtomicBoolean RUNNING = new AtomicBoolean(false);
     private static final DateTimeFormatter DAY = DateTimeFormatter.ofPattern("d MMM yyyy", Locale.ENGLISH);
     private static final String DONE = SlaEngine.DONE;
@@ -55,14 +55,16 @@ public class AutomationService {
     private final AuditService audit;
     private final SlaEngine engine;
     private final NotificationService notifications;
+    private final SettingsService settings;
     private final JdbcTemplate jdbc;
 
     public AutomationService(AccessService access, AuditService audit, SlaEngine engine,
-                             NotificationService notifications, DataSource dataSource) {
+                             NotificationService notifications, SettingsService settings, DataSource dataSource) {
         this.access = access;
         this.audit = audit;
         this.engine = engine;
         this.notifications = notifications;
+        this.settings = settings;
         this.jdbc = new JdbcTemplate(dataSource);
     }
 
@@ -83,13 +85,18 @@ public class AutomationService {
 
     /** Counters of one run. */
     private static final class Counters {
+        final int limit;
         int checked;
         int notified;
         int escalated;
         int assigned;
 
+        Counters(int limit) {
+            this.limit = limit;
+        }
+
         boolean full() {
-            return notified >= MAX_NOTIFICATIONS_PER_RUN;
+            return notified >= limit;
         }
     }
 
@@ -174,7 +181,7 @@ public class AutomationService {
             jdbc.query("SELECT code, enabled FROM automation_rules", rs -> {
                 on.put(rs.getString("code"), rs.getBoolean("enabled"));
             });
-            Counters c = new Counters();
+            Counters c = new Counters(settings.number("automation.maxNotificationsPerRun"));
             List<String> problems = new ArrayList<>();
             boolean slaAlerts = on.getOrDefault("SLA_ALERTS", false);
             boolean autoEscalate = on.getOrDefault("AUTO_ESCALATE_ON_BREACH", false);
@@ -191,7 +198,7 @@ public class AutomationService {
                 step(problems, "Daily summary", () -> dailySummaryStep(runId, c));
             }
             String message = problems.isEmpty()
-                    ? (c.full() ? "Notification limit of " + MAX_NOTIFICATIONS_PER_RUN + " reached; the rest go out next run" : null)
+                    ? (c.full() ? "Notification limit of " + c.limit + " reached; the rest go out next run" : null)
                     : String.join(" | ", problems);
             jdbc.update("UPDATE automation_runs SET finished_at = now(), status = ?, tickets_checked = ?, "
                             + "notifications_created = ?, tickets_escalated = ?, tickets_assigned = ?, message = ? WHERE id = ?",
@@ -217,7 +224,8 @@ public class AutomationService {
     private void slaStep(Long runId, Counters c, boolean alerts, boolean escalate) {
         Map<Long, SlaEngine.Policy> policies = engine.policies();
         List<SlaEngine.TicketRow> rows = engine.tickets("WHERE NOT " + DONE + " AND p.status = 'ACTIVE' "
-                + "AND t.created_at_source >= now() - interval '30 days' ORDER BY t.created_at_source");
+                + "AND t.created_at_source >= now() - make_interval(days => ?) ORDER BY t.created_at_source",
+                settings.number("automation.alertLookbackDays"));
         c.checked += rows.size();
         Instant now = Instant.now();
         for (SlaEngine.TicketRow t : rows) {
@@ -375,7 +383,7 @@ public class AutomationService {
 
     private void dailySummaryStep(Long runId, Counters c) {
         LocalDateTime nowIndia = LocalDateTime.now(INDIA);
-        if (nowIndia.getHour() < 9) {
+        if (nowIndia.getHour() < settings.number("automation.dailySummaryHour")) {
             return;
         }
         LocalDate today = nowIndia.toLocalDate();
@@ -408,7 +416,7 @@ public class AutomationService {
             lines.put(((Number) p.get("id")).longValue(), p.get("project_name") + ": " + created + " new, " + done
                     + " done, " + open + " open now, " + breaches + " SLA breach" + (breaches == 1 ? "" : "es"));
         }
-        String title = "Daily summary for " + DAY.format(yesterday);
+        String title = settings.text("company.name") + ": daily summary for " + DAY.format(yesterday);
         int sent = 0;
         if (!lines.isEmpty()) {
             String all = String.join(" | ", lines.values());

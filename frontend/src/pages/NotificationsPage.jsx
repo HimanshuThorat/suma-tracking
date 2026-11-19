@@ -80,7 +80,7 @@ export default function NotificationsPage({ onCountChange }) {
                   {n.body && <p className="note-text">{n.body}</p>}
                   {(n.ticketNumber || n.projectName) && (
                     <div className="muted small">
-                      {n.projectName}{n.projectName && n.ticketNumber ? ' \u00b7 ' : ''}{n.ticketNumber && <>Ticket {n.ticketNumber} (find it in <a href="#/tickets">Ticket Management</a>)</>}
+                      {n.projectName}{n.projectName && n.ticketNumber ? ' \u00b7 ' : ''}{n.ticketNumber && <a href={`#/tickets?q=${encodeURIComponent(n.ticketNumber)}&open=1`}>Open ticket {n.ticketNumber}</a>}
                     </div>
                   )}
                 </div>

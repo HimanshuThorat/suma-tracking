@@ -1,5 +1,6 @@
 package com.sumasoft.tracking.sla;
 
+import com.sumasoft.tracking.settings.SettingsService;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Component;
 
@@ -70,9 +71,16 @@ public class SlaEngine {
     public static final String DONE = "s.status_group IN ('RESOLVED', 'CLOSED')";
 
     private final JdbcTemplate jdbc;
+    private final SettingsService settings;
 
-    public SlaEngine(DataSource dataSource) {
+    public SlaEngine(DataSource dataSource, SettingsService settings) {
         this.jdbc = new JdbcTemplate(dataSource);
+        this.settings = settings;
+    }
+
+    /** Targets for projects that have none of their own (Settings page, "SLA starting targets"). */
+    public Map<String, int[]> defaultTargets() {
+        return settings == null ? DEFAULT_TARGETS : settings.slaDefaults();
     }
 
     public record Policy(long projectId, ZoneId zone, String hoursMode, BusinessCalendar calendar, int warnPercent,
@@ -101,6 +109,7 @@ public class SlaEngine {
 
     /** SLA settings of every project (projects without saved settings get the starting values). */
     public Map<Long, Policy> policies() {
+        Map<String, int[]> defaults = defaultTargets();
         Map<Long, Map<String, int[]>> targets = new HashMap<>();
         jdbc.query("SELECT project_id, priority_code, first_response_minutes, resolution_minutes FROM sla_targets", rs -> {
             targets.computeIfAbsent(rs.getLong("project_id"), k -> new LinkedHashMap<>())
@@ -122,7 +131,7 @@ public class SlaEngine {
             LocalTime end = rs.getTime("day_end") == null ? LocalTime.of(18, 0) : rs.getTime("day_end").toLocalTime();
             int warn = rs.getObject("warn_percent") == null ? 80 : rs.getInt("warn_percent");
             boolean pause = rs.getObject("pause_when_waiting") == null || rs.getBoolean("pause_when_waiting");
-            Map<String, int[]> t = new HashMap<>(DEFAULT_TARGETS);
+            Map<String, int[]> t = new HashMap<>(defaults);
             t.putAll(targets.getOrDefault(id, Map.of()));
             ZoneId zone = zone(rs.getString("time_zone"));
             BusinessCalendar cal = new BusinessCalendar(zone, "TWENTY_FOUR_SEVEN".equals(mode),

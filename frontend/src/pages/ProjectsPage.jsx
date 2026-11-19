@@ -130,6 +130,14 @@ function projectSchema(v) {
 }
 
 function ProjectForm({ row, clients, onClose, onSaved }) {
+  // a new project starts with the default time zone from Settings
+  useEffect(() => {
+    if (row) return
+    api.publicSettings().then((p) => {
+      if (p && p.defaultTimeZone) form.setValues((v) => (v.timeZone === 'Asia/Kolkata' ? { ...v, timeZone: p.defaultTimeZone } : v))
+    }).catch(() => {})
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
   const form = useValidatedForm(row ? {
     clientId: String(row.clientId), projectName: row.projectName, description: row.description || '',
     supportsL1: row.supportsL1, supportsL2: row.supportsL2, supportsL3: row.supportsL3,
