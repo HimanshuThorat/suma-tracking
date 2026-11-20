@@ -1,11 +1,15 @@
 import { useCallback, useEffect, useState } from 'react'
 import { api } from '../api.js'
+import { useCan } from '../permissions.js'
 import { Confirm, DeleteIcon, Drawer, EditIcon, Field, IconButton, PageHead, Toast } from '../components.jsx'
 import { FIX_MESSAGE, digitsOnly, rules, useValidatedForm } from '../validation.js'
 
 const EMPTY = { name: '', designation: '', email: '', contactNumber: '', projectName: '', accountManagerAssigned: 'NO', accountManagerUserId: '' }
 
 export default function ClientsPage() {
+  // Step 39: CLIENT_MANAGE = every client (Super Admin). CLIENT_EDIT_ASSIGNED = only own clients (Client Admin).
+  const can = useCan()
+  const canManage = can('CLIENT_MANAGE')
   const [rows, setRows] = useState([])
   const [users, setUsers] = useState([])
   const [showRemoved, setShowRemoved] = useState(false)
@@ -20,7 +24,9 @@ export default function ClientsPage() {
   }, [showRemoved])
 
   useEffect(() => { load() }, [load])
-  useEffect(() => { api.users().then((u) => setUsers((u || []).filter((x) => x.status === 'ACTIVE'))).catch(() => setUsers([])) }, [])
+  useEffect(() => {
+    if (canManage) api.users().then((u) => setUsers((u || []).filter((x) => x.status === 'ACTIVE'))).catch(() => setUsers([]))
+  }, [canManage])
 
   async function remove() {
     setBusy(true)
@@ -48,12 +54,16 @@ export default function ClientsPage() {
 
   return (
     <div className="page">
-      <PageHead title="Client Management" text="Add clients, keep their details up to date and assign account managers.">
-        <label className="check">
-          <input type="checkbox" checked={showRemoved} onChange={(e) => setShowRemoved(e.target.checked)} />
-          Show deleted clients
-        </label>
-        <button className="btn primary" type="button" onClick={() => setEditing({})}>Create client</button>
+      <PageHead title="Client Management" text={canManage
+        ? 'Add clients, keep their details up to date and assign account managers.'
+        : 'The clients given to you. Keep their details up to date and add projects.'}>
+        {canManage && (
+          <label className="check">
+            <input type="checkbox" checked={showRemoved} onChange={(e) => setShowRemoved(e.target.checked)} />
+            Show deleted clients
+          </label>
+        )}
+        {canManage && <button className="btn primary" type="button" onClick={() => setEditing({})}>Create client</button>}
       </PageHead>
 
       {error && <div className="alert error" role="alert" onClick={() => setError('')}>{error}</div>}
@@ -87,16 +97,16 @@ export default function ClientsPage() {
                     {r.status === 'ACTIVE' ? (
                       <>
                         <IconButton label={`Edit ${r.name}`} onClick={() => setEditing(r)}><EditIcon /></IconButton>
-                        <IconButton label={`Delete ${r.name}`} kind="danger" onClick={() => setDeleting(r)}><DeleteIcon /></IconButton>
+                        {canManage && <IconButton label={`Delete ${r.name}`} kind="danger" onClick={() => setDeleting(r)}><DeleteIcon /></IconButton>}
                       </>
-                    ) : (
+                    ) : canManage ? (
                       <button className="btn small" type="button" onClick={() => restore(r)}>Restore</button>
-                    )}
+                    ) : null}
                   </td>
                 </tr>
               ))}
               {rows.length === 0 && (
-                <tr><td colSpan={8} className="empty-row">No clients yet. Press Create client to add the first one.</td></tr>
+                <tr><td colSpan={8} className="empty-row">{canManage ? 'No clients yet. Press Create client to add the first one.' : 'No clients are given to you yet. The Super Admin links clients to Client Admins.'}</td></tr>
               )}
             </tbody>
           </table>
@@ -105,6 +115,7 @@ export default function ClientsPage() {
 
       {editing && (
         <ClientForm
+          canManage={canManage}
           row={editing.id ? editing : null}
           users={users}
           onClose={() => setEditing(null)}
@@ -143,7 +154,7 @@ function clientSchema(v) {
   }
 }
 
-function ClientForm({ row, users, onClose, onSaved }) {
+function ClientForm({ row, users, canManage, onClose, onSaved }) {
   const form = useValidatedForm(row ? {
     name: row.name || '',
     designation: row.designation || '',
@@ -214,13 +225,20 @@ function ClientForm({ row, users, onClose, onSaved }) {
           hint={row && row.projects.length ? `Current projects: ${row.projects.join(', ')}. Type a new name to add another project.` : 'A new project with this name is created for the client.'}>
           <input value={f.projectName} onChange={set('projectName')} onBlur={blur('projectName')} maxLength={150} aria-invalid={Boolean(errors.projectName)} />
         </Field>
+        {!canManage && (
+          <Field label="Account manager" hint="Only the Super Admin changes the account manager.">
+            <input value={row && row.accountManagerAssigned ? row.accountManagerName : 'Not assigned'} disabled />
+          </Field>
+        )}
+        {canManage && (
         <Field label="Account Manager (Is Assigned)">
           <select value={f.accountManagerAssigned} onChange={(e) => { form.setValue('accountManagerAssigned', e.target.value); setErrors({ ...errors, accountManagerUserId: '' }) }}>
             <option value="NO">No</option>
             <option value="YES">Yes</option>
           </select>
         </Field>
-        {f.accountManagerAssigned === 'YES' && (
+        )}
+        {canManage && f.accountManagerAssigned === 'YES' && (
           <Field label="Account manager *" error={errors.accountManagerUserId}>
             <select value={f.accountManagerUserId} onChange={set('accountManagerUserId')} onBlur={blur('accountManagerUserId')} aria-invalid={Boolean(errors.accountManagerUserId)}>
               <option value="">Choose an employee</option>

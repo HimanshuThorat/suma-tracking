@@ -3,6 +3,7 @@ package com.sumasoft.tracking.knowledge;
 import com.sumasoft.tracking.audit.AuditService;
 import com.sumasoft.tracking.auth.AccessService;
 import com.sumasoft.tracking.auth.AuthenticatedUser;
+import com.sumasoft.tracking.rbac.RbacService;
 import com.sumasoft.tracking.knowledge.KnowledgeDtos.AnswerPart;
 import com.sumasoft.tracking.knowledge.KnowledgeDtos.Article;
 import com.sumasoft.tracking.knowledge.KnowledgeDtos.ArticleForm;
@@ -33,7 +34,7 @@ import java.util.Map;
  *    mistakes and common Hindi words (KnowledgeSearch). "Ask" mode answers a question in plain words.
  *  - It never opens or changes tickets; it only explains the tool.
  *  - Searches with no answer are saved, so the Super Admin can add a guide for them.
- *  - Only the Super Admin adds or edits guides. Guides are never deleted (status HIDDEN), and every
+ *  - Roles with KB_MANAGE (Super Admin by default) add or edit guides. Guides are never deleted (status HIDDEN), and every
  *    saved version is kept (kb_article_versions) and audited.
  */
 @Service
@@ -43,11 +44,13 @@ public class KnowledgeService {
 
     private final AccessService access;
     private final AuditService audit;
+    private final RbacService rbac;
     private final JdbcTemplate jdbc;
 
-    public KnowledgeService(AccessService access, AuditService audit, DataSource dataSource) {
+    public KnowledgeService(AccessService access, AuditService audit, RbacService rbac, DataSource dataSource) {
         this.access = access;
         this.audit = audit;
+        this.rbac = rbac;
         this.jdbc = new JdbcTemplate(dataSource);
     }
 
@@ -56,7 +59,7 @@ public class KnowledgeService {
     @Transactional(readOnly = true)
     public List<ArticleListItem> list(boolean includeHidden) {
         AuthenticatedUser me = access.current();
-        boolean all = includeHidden && access.isSuperAdmin(me);
+        boolean all = includeHidden && rbac.has(me, "KB_MANAGE");
         return jdbc.query("SELECT id, slug, category, title, summary, status, sort_order, view_count, updated_at FROM kb_articles "
                         + (all ? "" : "WHERE status = 'PUBLISHED' ") + "ORDER BY sort_order, id",
                 (rs, n) -> new ArticleListItem(rs.getLong("id"), rs.getString("slug"), rs.getString("category"),
@@ -68,7 +71,7 @@ public class KnowledgeService {
     public Article read(String slug, boolean countView) {
         AuthenticatedUser me = access.current();
         List<Article> found = jdbc.query(ARTICLE_SELECT + " WHERE a.slug = ?", (rs, n) -> article(rs), slug);
-        if (found.isEmpty() || ("HIDDEN".equals(found.get(0).status()) && !access.isSuperAdmin(me))) {
+        if (found.isEmpty() || ("HIDDEN".equals(found.get(0).status()) && !rbac.has(me, "KB_MANAGE"))) {
             throw AccessService.notFound("Guide");
         }
         if (countView) {
@@ -131,7 +134,7 @@ public class KnowledgeService {
     @Transactional
     public Article create(ArticleForm f) {
         AuthenticatedUser me = access.current();
-        access.requireSuperAdmin(me);
+        rbac.require(me, "KB_MANAGE");
         Integer exists = jdbc.queryForObject("SELECT COUNT(*) FROM kb_articles WHERE slug = ?", Integer.class, f.slug());
         if (exists != null && exists > 0) {
             throw new ResponseStatusException(HttpStatus.CONFLICT, "A guide with this short web name already exists");
@@ -151,7 +154,7 @@ public class KnowledgeService {
     @Transactional
     public Article update(Long id, ArticleForm f) {
         AuthenticatedUser me = access.current();
-        access.requireSuperAdmin(me);
+        rbac.require(me, "KB_MANAGE");
         List<Article> found = jdbc.query(ARTICLE_SELECT + " WHERE a.id = ?", (rs, n) -> article(rs), id);
         if (found.isEmpty()) {
             throw AccessService.notFound("Guide");
@@ -176,7 +179,7 @@ public class KnowledgeService {
 
     @Transactional(readOnly = true)
     public List<Version> versions(Long id) {
-        access.requireSuperAdmin(access.current());
+        rbac.require(access.current(), "KB_MANAGE");
         return jdbc.query("SELECT v.version_no, v.title, v.category, v.status, v.changed_at, u.full_name FROM kb_article_versions v "
                         + "LEFT JOIN users u ON u.id = v.changed_by_user_id WHERE v.article_id = ? ORDER BY v.version_no DESC",
                 (rs, n) -> new Version(rs.getInt("version_no"), rs.getString("title"), rs.getString("category"),
@@ -185,7 +188,7 @@ public class KnowledgeService {
 
     @Transactional(readOnly = true)
     public List<Unanswered> unanswered() {
-        access.requireSuperAdmin(access.current());
+        rbac.require(access.current(), "KB_MANAGE");
         return jdbc.query("SELECT q.id, q.question, q.mode, q.asked_at, u.full_name FROM kb_unanswered q "
                         + "LEFT JOIN users u ON u.id = q.asked_by_user_id ORDER BY q.asked_at DESC LIMIT 200",
                 (rs, n) -> new Unanswered(rs.getLong("id"), rs.getString("question"), rs.getString("mode"),

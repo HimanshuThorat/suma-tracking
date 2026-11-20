@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { api } from '../api.js'
+import { useCan } from '../permissions.js'
 import { Confirm, Drawer, EditIcon, Field, IconButton, PageHead, Toast } from '../components.jsx'
 import { fmtMinutes, fmtNumber } from '../format.js'
 import { FIX_MESSAGE, digitsOnly, rules, useValidatedForm } from '../validation.js'
@@ -10,7 +11,66 @@ const EMPTY = {
   roleCode: 'L1_SUPPORT', reportingManagerId: '', shiftStart: '', shiftEnd: '', weeklyOff: [],
 }
 
+/**
+ * Step 39: USER_MANAGE (Super Admin) gets the full employee screen.
+ * WORKLOAD_VIEW (leads, Management Viewer) gets a read-only view of the people on their own projects.
+ */
 export default function TeamPage() {
+  const can = useCan()
+  return can('USER_MANAGE') ? <TeamAdmin /> : <TeamView />
+}
+
+function TeamView() {
+  const [rows, setRows] = useState(null)
+  const [error, setError] = useState('')
+  const [query, setQuery] = useState('')
+  useEffect(() => { api.workload().then((r) => setRows(r || [])).catch((e) => setError(e.message)) }, [])
+  const shown = useMemo(() => {
+    const q = query.trim().toLowerCase()
+    return (rows || []).filter((u) => !q || `${u.fullName} ${u.employeeCode} ${u.roleName}`.toLowerCase().includes(q))
+  }, [rows, query])
+  return (
+    <div className="page">
+      <PageHead title="Team Management" text="The people on your projects and their open work. Only the Super Admin adds or changes employees.">
+        <input className="search" type="search" placeholder="Search name, code or role" value={query} onChange={(e) => setQuery(e.target.value)} />
+      </PageHead>
+      {error && <div className="alert error" role="alert">{error}</div>}
+      <section className="panel flush">
+        <div className="table-wrap">
+          <table className="table grid-table">
+            <thead>
+              <tr>
+                <th scope="col">Employee</th><th scope="col">Code</th><th scope="col">Role</th><th scope="col">Projects</th>
+                <th scope="col" className="num">Open</th><th scope="col" className="num">Waiting</th>
+                <th scope="col" className="num">Escalated open</th><th scope="col" className="num">Done, 30 days</th>
+                <th scope="col" className="num">Oldest open</th><th scope="col">Status</th>
+              </tr>
+            </thead>
+            <tbody>
+              {shown.map((w) => (
+                <tr key={w.userId} className={w.status !== 'ACTIVE' ? 'removed' : ''}>
+                  <td className="strong">{w.fullName}</td>
+                  <td>{w.employeeCode || '-'}</td>
+                  <td>{w.roleName}</td>
+                  <td>{Array.isArray(w.projects) ? w.projects.join(', ') : (w.projects || '-')}</td>
+                  <td className="num">{fmtNumber(w.open || 0)}</td>
+                  <td className="num">{fmtNumber(w.waiting || 0)}</td>
+                  <td className="num">{fmtNumber(w.escalatedOpen || 0)}</td>
+                  <td className="num">{fmtNumber(w.doneLast30Days || 0)}</td>
+                  <td className="num">{w.oldestOpenMinutes != null ? fmtMinutes(w.oldestOpenMinutes) : '-'}</td>
+                  <td>{w.status === 'ACTIVE' ? <span className="tag ok">Active</span> : <span className="tag">Inactive</span>}</td>
+                </tr>
+              ))}
+              {rows && shown.length === 0 && <tr><td colSpan={10} className="empty-row">Nobody found on your projects.</td></tr>}
+            </tbody>
+          </table>
+        </div>
+      </section>
+    </div>
+  )
+}
+
+function TeamAdmin() {
   const [users, setUsers] = useState([])
   const [roles, setRoles] = useState([])
   const [projects, setProjects] = useState([])
@@ -168,8 +228,15 @@ function EmployeeForm({ user, roles, users, projects, onClose, onSaved }) {
   const { values: f, errors, setErrors, blur } = form
   const [error, setError] = useState('')
   const [busy, setBusy] = useState(false)
+  // Step 40: a new employee gets the login password in the same step
+  const [pw, setPw] = useState('')
+  const [pwErr, setPwErr] = useState('')
+  const [login, setLogin] = useState(null)
   const set = (k) => (e) => form.setValue(k, e.target.value)
   const bad = (k) => Boolean(errors[k])
+  const checkPw = (v) => (!v ? 'Give the employee a login password (press Generate).'
+    : v.length < 10 || !/[A-Za-z]/.test(v) || !/[0-9]/.test(v) || /\s/.test(v)
+      ? 'At least 10 characters, with at least one letter and one number, and no spaces.' : '')
 
   function toggleDay(d) {
     form.setValue('weeklyOff', f.weeklyOff.includes(d) ? f.weeklyOff.filter((x) => x !== d) : [...f.weeklyOff, d])
@@ -178,7 +245,10 @@ function EmployeeForm({ user, roles, users, projects, onClose, onSaved }) {
   async function save(e) {
     e.preventDefault()
     setError('')
-    if (!form.validateAll()) { setError(FIX_MESSAGE); return }
+    const okForm = form.validateAll()
+    const pwProblem = current ? '' : checkPw(pw)
+    setPwErr(pwProblem)
+    if (!okForm || pwProblem) { setError(FIX_MESSAGE); return }
     const body = {
       ...f,
       fullName: f.fullName.trim(),
@@ -196,7 +266,20 @@ function EmployeeForm({ user, roles, users, projects, onClose, onSaved }) {
     setBusy(true)
     try {
       const saved = current ? await api.updateUser(current.id, body) : await api.createUser(body)
-      onSaved(current ? `${saved.fullName} updated` : `${saved.fullName} added. Now allocate projects and set a temporary password.`)
+      if (!current) {
+        setCurrent(saved)
+        try {
+          await api.resetPassword(saved.id, pw)
+          setLogin({ name: saved.fullName, email: saved.email || body.email, password: pw, role: saved.roleName })
+          onSaved(`${saved.fullName} added with a login password. Now give them their projects.`)
+        } catch (pwError) {
+          setError(`${saved.fullName} was added, but the password was not set: ${pwError.message} Set it below in Login password.`)
+          onSaved(`${saved.fullName} added`)
+        }
+        setPw('')
+        return
+      }
+      onSaved(`${saved.fullName} updated`)
       setCurrent(saved)
     } catch (err) {
       setError(err.message)
@@ -228,7 +311,20 @@ function EmployeeForm({ user, roles, users, projects, onClose, onSaved }) {
           <input value={f.contactNumber} onChange={(e) => form.setValue('contactNumber', digitsOnly(e.target.value))} onBlur={blur('contactNumber')}
             maxLength={10} inputMode="numeric" placeholder="9876543210" aria-invalid={bad('contactNumber')} />
         </Field>
-        <Field label="Role" error={errors.roleCode}>
+        {!current && (
+          <div className={`field span-2${pwErr ? ' invalid' : ''}`}>
+            <span>Login password *</span>
+            <div className="inline-form">
+              <input type="text" value={pw} autoComplete="new-password" spellCheck="false" maxLength={100}
+                onChange={(e) => { setPw(e.target.value); if (pwErr) setPwErr(checkPw(e.target.value)) }}
+                placeholder="Press Generate, or type one" aria-invalid={Boolean(pwErr)} />
+              <button className="btn" type="button" onClick={() => { const g = generatePassword(); setPw(g); setPwErr('') }}>Generate</button>
+            </div>
+            {pwErr ? <small className="field-error" role="alert">{'\u26a0 '}{pwErr}</small>
+              : <small className="hint">A temporary password. The employee must choose their own at the first sign-in.</small>}
+          </div>
+        )}
+        <Field label="Role *" error={errors.roleCode}>
           <select value={f.roleCode} onChange={set('roleCode')}>
             {roles.map((r) => <option key={r.code} value={r.code}>{r.name}</option>)}
           </select>
@@ -256,10 +352,11 @@ function EmployeeForm({ user, roles, users, projects, onClose, onSaved }) {
         <Field label="Skills" error={errors.skillSet}><input value={f.skillSet} onChange={set('skillSet')} onBlur={blur('skillSet')} maxLength={500} placeholder="e.g. Zendesk, account management" aria-invalid={bad('skillSet')} /></Field>
         {error && <div className="alert error span-2" role="alert">{error}</div>}
       </form>
+      {login && <LoginCard login={login} />}
 
       {current && <ProjectAllocation user={current} projects={projects} />}
       {current && <TempPassword user={current} />}
-      {!current && <p className="fine">After you press Add, you can allocate projects and set a temporary password here.</p>}
+      {!current && <p className="fine">Press Add: the employee and their login are created together. Then give them their projects here.</p>}
     </Drawer>
   )
 }
@@ -328,6 +425,44 @@ function ProjectAllocation({ user, projects }) {
       </div>
       {error && <div className="alert error" role="alert">{error}</div>}
     </section>
+  )
+}
+
+/** A random temporary password: 12 characters, letters and digits, no look-alike characters. */
+function generatePassword() {
+  const letters = 'ABCDEFGHJKMNPQRSTUVWXYZabcdefghjkmnpqrstuvwxyz'
+  const digits = '23456789'
+  const all = letters + digits
+  const buf = new Uint32Array(12)
+  crypto.getRandomValues(buf)
+  let s = letters[buf[0] % letters.length] + digits[buf[1] % digits.length]
+  for (let i = 2; i < 12; i++) s += all[buf[i] % all.length]
+  return s
+}
+
+/** Shown once after creating an employee: what to give them privately. */
+function LoginCard({ login }) {
+  const [copied, setCopied] = useState(false)
+  const text = `Suma Tracking sign-in\nPage: ${window.location.origin}/#/login\nEmail: ${login.email}\nTemporary password: ${login.password}\nYou will choose your own password at the first sign-in.`
+  async function copy() {
+    try { await navigator.clipboard.writeText(text); setCopied(true); setTimeout(() => setCopied(false), 2000) } catch { setCopied(false) }
+  }
+  return (
+    <div className="login-card" role="status">
+      <div className="login-card-head">
+        <strong>Login details for {login.name}</strong>
+        <span className="tag">{login.role}</span>
+      </div>
+      <dl>
+        <div><dt>Sign-in page</dt><dd>{window.location.origin}/#/login</dd></div>
+        <div><dt>Email</dt><dd>{login.email}</dd></div>
+        <div><dt>Temporary password</dt><dd className="mono">{login.password}</dd></div>
+      </dl>
+      <div className="login-card-foot">
+        <span className="muted small">Give these privately. This password is shown only now.</span>
+        <button className="btn small" type="button" onClick={copy}>{copied ? 'Copied' : 'Copy details'}</button>
+      </div>
+    </div>
   )
 }
 

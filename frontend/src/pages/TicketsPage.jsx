@@ -1,12 +1,32 @@
 import { useCallback, useEffect, useState } from 'react'
 import { api } from '../api.js'
+import { useCan, useMe } from '../permissions.js'
 import { GROUP_COLORS, GROUP_LABELS, fmtDateTime, fmtMinutes, fmtNumber } from '../format.js'
 
 const PAGE_SIZE = 50
 
+/**
+ * Filters can come from the address, e.g. #/tickets?q=12365&projectId=3&open=1
+ * (used by the Knowledge Base search and later by the assistant). open=1 opens the ticket
+ * when exactly one ticket matches. Opening only reads; nothing is changed.
+ */
+function filtersFromHash() {
+  const empty = { q: '', projectId: '', statusGroup: '', escalated: '', createdFrom: '', createdTo: '' }
+  const query = window.location.hash.split('?')[1]
+  if (!query) return { filters: empty, openOne: false }
+  const p = new URLSearchParams(query)
+  const pick = (k) => (p.get(k) || '').slice(0, 100)
+  return {
+    filters: { ...empty, q: pick('q'), projectId: /^[0-9]+$/.test(pick('projectId')) ? pick('projectId') : '', statusGroup: pick('statusGroup'), escalated: pick('escalated') === 'true' ? 'true' : '' },
+    openOne: p.get('open') === '1',
+  }
+}
+
 export default function TicketsPage() {
   const [projects, setProjects] = useState([])
-  const [filters, setFilters] = useState({ q: '', projectId: '', statusGroup: '', escalated: '', createdFrom: '', createdTo: '' })
+  const [fromLink] = useState(filtersFromHash)
+  const [filters, setFilters] = useState(fromLink.filters)
+  const [openOne, setOpenOne] = useState(fromLink.openOne)
   const [applied, setApplied] = useState(filters)
   const [page, setPage] = useState(0)
   const [data, setData] = useState(null)
@@ -23,10 +43,18 @@ export default function TicketsPage() {
     setLoading(true)
     setError('')
     api.tickets({ ...applied, page, size: PAGE_SIZE })
-      .then((d) => { if (alive) setData(d) })
+      .then((d) => {
+        if (!alive) return
+        setData(d)
+        if (openOne) {
+          setOpenOne(false)
+          if (d && d.items && d.items.length === 1) setOpenId(d.items[0].id)
+        }
+      })
       .catch((e) => { if (alive) setError(e.message) })
       .finally(() => { if (alive) setLoading(false) })
     return () => { alive = false }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [applied, page])
 
   function search(e) {
@@ -263,8 +291,19 @@ function titleCase(s) {
   return s ? s.charAt(0) + s.slice(1).toLowerCase().replace(/_/g, ' ') : ''
 }
 
-/** Work on the ticket: change status, assign / reassign, escalate to Tier 2. The server checks who may do what. */
+/**
+ * Work on the ticket: change status, assign / reassign, escalate to Tier 2.
+ * Step 39: only the actions the role may do are shown. Support agents (no "assign" permission) may change
+ * or escalate only tickets assigned to them. The server checks all of this again.
+ */
 function TicketActions({ ticket, onDone }) {
+  const can = useCan()
+  const me = useMe()
+  const lead = can('TICKET_ASSIGN')
+  const mine = me && ticket.assigneeUserId === me.id
+  const canStatus = can('TICKET_UPDATE') && (lead || mine)
+  const canAssign = lead
+  const canEscalate = can('TICKET_ESCALATE') && (lead || mine)
   const [statuses, setStatuses] = useState([])
   const [team, setTeam] = useState([])
   const [status, setStatus] = useState('')
@@ -275,9 +314,9 @@ function TicketActions({ ticket, onDone }) {
   const [done, setDone] = useState('')
 
   useEffect(() => {
-    api.statuses().then((l) => setStatuses(l || [])).catch(() => setStatuses([]))
-    api.projectTeam(ticket.projectId).then((l) => setTeam(l || [])).catch(() => setTeam([]))
-  }, [ticket.projectId])
+    if (canStatus) api.statuses().then((l) => setStatuses(l || [])).catch(() => setStatuses([]))
+    if (canAssign) api.projectTeam(ticket.projectId).then((l) => setTeam(l || [])).catch(() => setTeam([]))
+  }, [ticket.projectId, canStatus, canAssign])
 
   useEffect(() => {
     setStatus(ticket.statusCode)
@@ -309,8 +348,18 @@ function TicketActions({ ticket, onDone }) {
   }
 
   const finished = ticket.statusGroup === 'RESOLVED' || ticket.statusGroup === 'CLOSED'
+  if (!canStatus && !canAssign && !canEscalate) {
+    return (
+      <div className="actions-box read-only">
+        <p className="muted small">
+          {can('TICKET_UPDATE') ? 'You can work on this ticket when it is assigned to you.' : 'Your role can view this ticket but not change it.'}
+        </p>
+      </div>
+    )
+  }
   return (
     <div className="actions-box">
+      {canStatus && (
       <div className="action-row">
         <label className="field"><span>Status</span>
           <select value={status} onChange={(e) => setStatus(e.target.value)}>
@@ -321,6 +370,8 @@ function TicketActions({ ticket, onDone }) {
           {busy === 'status' ? 'Saving...' : 'Change status'}
         </button>
       </div>
+      )}
+      {canAssign && (
       <div className="action-row">
         <label className="field"><span>Assigned to</span>
           <select value={assignee} onChange={(e) => setAssignee(e.target.value)} disabled={finished}>
@@ -333,17 +384,20 @@ function TicketActions({ ticket, onDone }) {
           {busy === 'assign' ? 'Saving...' : ticket.assigneeUserId ? 'Reassign' : 'Assign'}
         </button>
       </div>
+      )}
       <label className="field"><span>Note for the history (optional)</span>
         <input value={note} onChange={(e) => setNote(e.target.value)} maxLength={500} placeholder="Why this change" />
       </label>
+      {canEscalate && (
       <div className="action-row end">
         <button className="btn warn" type="button" disabled={!!busy || finished} onClick={() => run('escalate')}>
           {busy === 'escalate' ? 'Escalating...' : 'Escalate to Tier 2'}
         </button>
       </div>
+      )}
       {error && <div className="alert error" role="alert">{error}</div>}
       {done && <div className="alert ok" role="status">{done}</div>}
-      {team.length === 0 && <p className="fine">Nobody is on this project&apos;s team yet, so the ticket cannot be assigned. Add people in Team Management.</p>}
+      {canAssign && team.length === 0 && <p className="fine">Nobody is on this project&apos;s team yet, so the ticket cannot be assigned. Add people in Team Management.</p>}
     </div>
   )
 }

@@ -1,8 +1,10 @@
 import { useEffect, useMemo, useState } from 'react'
 import { api } from '../api.js'
+import { useCan } from '../permissions.js'
 import { fmtDateTime, fmtNumber } from '../format.js'
 
 export default function ImportPage({ embedded }) {
+  const canRun = useCan()('IMPORT_RUN')
   const [projects, setProjects] = useState([])
   const [projectId, setProjectId] = useState('')
   const [file, setFile] = useState(null)
@@ -63,6 +65,8 @@ export default function ImportPage({ embedded }) {
         changed tickets are updated, and the rest is left as it is. Uploading the same sheet again never makes duplicates.
       </p>
 
+      {!canRun && <div className="alert info" role="status">Your role can see the import history but cannot upload sheets.</div>}
+      {canRun && (
       <section className="panel">
         <div className="import-form">
           <label className="field">
@@ -100,6 +104,7 @@ export default function ImportPage({ embedded }) {
         </div>
         {error && <div className="alert error" role="alert">{error}</div>}
       </section>
+      )}
 
       {result && <ImportResult result={result} />}
 

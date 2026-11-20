@@ -3,6 +3,7 @@ package com.sumasoft.tracking.admin;
 import com.sumasoft.tracking.audit.AuditService;
 import com.sumasoft.tracking.auth.AccessService;
 import com.sumasoft.tracking.auth.AuthenticatedUser;
+import com.sumasoft.tracking.rbac.RbacService;
 import com.sumasoft.tracking.notification.NotificationService;
 import com.sumasoft.tracking.user.RoleResponse;
 import jakarta.validation.constraints.NotBlank;
@@ -43,12 +44,15 @@ public class AdminService {
     private final AccessService access;
     private final AuditService audit;
     private final NotificationService notifications;
+    private final RbacService rbac;
     private final JdbcTemplate jdbc;
 
-    public AdminService(AccessService access, AuditService audit, NotificationService notifications, DataSource dataSource) {
+    public AdminService(AccessService access, AuditService audit, NotificationService notifications, RbacService rbac,
+                        DataSource dataSource) {
         this.access = access;
         this.audit = audit;
         this.notifications = notifications;
+        this.rbac = rbac;
         this.jdbc = new JdbcTemplate(dataSource);
     }
 
@@ -177,9 +181,7 @@ public class AdminService {
     @Transactional(readOnly = true)
     public List<WorkloadRow> workload() {
         AuthenticatedUser me = access.current();
-        if (access.isSupportUser(me)) {
-            throw AccessService.forbidden();
-        }
+        rbac.require(me, "WORKLOAD_VIEW", "USER_MANAGE");
         StringBuilder ticketFilter = new StringBuilder();
         List<Object> args = new ArrayList<>();
         if (!access.seesEverything(me)) {

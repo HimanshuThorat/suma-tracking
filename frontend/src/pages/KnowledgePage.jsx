@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { api } from '../api.js'
+import { useCan } from '../permissions.js'
 import { Drawer, Field, PageHead, Toast } from '../components.jsx'
 import { FIX_MESSAGE } from '../validation.js'
 import { fmtDateTime } from '../format.js'
@@ -22,7 +23,8 @@ function openGuide(slug) {
  * Search with simple words, or ask in your own words. It only explains the tool; it never opens or changes tickets.
  */
 export default function KnowledgePage({ user }) {
-  const isAdmin = user.roleCode === 'SUPER_ADMIN'
+  const can = useCan()
+  const isAdmin = can('KB_MANAGE')
   const [slug, setSlug] = useState(slugFromHash())
   const [articles, setArticles] = useState([])
   const [tab, setTab] = useState('guides')

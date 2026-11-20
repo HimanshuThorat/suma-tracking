@@ -4,6 +4,8 @@ import com.sumasoft.tracking.admin.AdminClientDtos.ClientForm;
 import com.sumasoft.tracking.admin.AdminClientDtos.ClientRow;
 import com.sumasoft.tracking.audit.AuditService;
 import com.sumasoft.tracking.auth.AccessService;
+import com.sumasoft.tracking.auth.AuthenticatedUser;
+import com.sumasoft.tracking.rbac.RbacService;
 import org.springframework.http.HttpStatus;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Service;
@@ -18,7 +20,10 @@ import java.util.List;
 import java.util.Map;
 
 /**
- * Client Management screen (Step 35). Super Admin only.
+ * Client Management screen (Step 35, roles in Step 39).
+ *  - CLIENT_MANAGE (Super Admin): every client; add, edit, delete, restore, account managers.
+ *  - CLIENT_EDIT_ASSIGNED (Client Admin): only the clients given to them; edit details and add projects,
+ *    but not delete them or change their account manager. Other clients stay hidden (404).
  *  - Add / update: Name, Designation, Company Email ID, Contact Number, Project Name, Account Manager.
  *  - "Project Name": when it is a new name for this client, the project is created (ACTIVE, India time).
  *  - Account Manager "Yes" needs an ACTIVE employee; "No" removes the account manager.
@@ -31,11 +36,13 @@ public class AdminClientService {
 
     private final AccessService access;
     private final AuditService audit;
+    private final RbacService rbac;
     private final JdbcTemplate jdbc;
 
-    public AdminClientService(AccessService access, AuditService audit, DataSource dataSource) {
+    public AdminClientService(AccessService access, AuditService audit, RbacService rbac, DataSource dataSource) {
         this.access = access;
         this.audit = audit;
+        this.rbac = rbac;
         this.jdbc = new JdbcTemplate(dataSource);
     }
 
@@ -46,14 +53,19 @@ public class AdminClientService {
 
     @Transactional(readOnly = true)
     public List<ClientRow> list(boolean includeRemoved) {
-        access.requireSuperAdmin(access.current());
+        AuthenticatedUser me = access.current();
+        rbac.require(me, "CLIENT_MANAGE", "CLIENT_EDIT_ASSIGNED");
         String sql = SELECT + (includeRemoved ? "" : " WHERE c.status = 'ACTIVE'") + " ORDER BY c.id";
-        return jdbc.query(sql, (rs, n) -> row(rs));
+        List<ClientRow> rows = jdbc.query(sql, (rs, n) -> row(rs));
+        if (rbac.has(me, "CLIENT_MANAGE")) {
+            return rows;
+        }
+        return rows.stream().filter(r -> access.isClientAdminOf(me, r.id())).toList();
     }
 
     @Transactional
     public ClientRow add(ClientForm f) {
-        access.requireSuperAdmin(access.current());
+        rbac.require(access.current(), "CLIENT_MANAGE");
         String name = f.name().trim();
         if (Boolean.TRUE.equals(jdbc.queryForObject(
                 "SELECT EXISTS (SELECT 1 FROM clients WHERE lower(client_name) = lower(?))", Boolean.class, name))) {
@@ -71,14 +83,22 @@ public class AdminClientService {
 
     @Transactional
     public ClientRow update(Long id, ClientForm f) {
-        access.requireSuperAdmin(access.current());
+        AuthenticatedUser me = access.current();
+        boolean all = rbac.has(me, "CLIENT_MANAGE");
+        if (!all) {
+            rbac.require(me, "CLIENT_EDIT_ASSIGNED");
+            if (!access.isClientAdminOf(me, id)) {
+                throw AccessService.notFound("Client");
+            }
+        }
         ClientRow before = get(id);
         String name = f.name().trim();
         if (Boolean.TRUE.equals(jdbc.queryForObject(
                 "SELECT EXISTS (SELECT 1 FROM clients WHERE lower(client_name) = lower(?) AND id <> ?)", Boolean.class, name, id))) {
             throw new ResponseStatusException(HttpStatus.CONFLICT, "Another client already uses this name");
         }
-        Long managerId = managerOf(f);
+        // a Client Admin cannot change who the account manager is
+        Long managerId = all ? managerOf(f) : before.accountManagerUserId();
         jdbc.update("UPDATE clients SET client_name = ?, designation = ?, email = ?, contact_number = ?, "
                         + "account_manager_id = ?, updated_at = now(), version = version + 1 WHERE id = ?",
                 name, clean(f.designation()), clean(f.email()), clean(f.contactNumber()), managerId, id);
@@ -99,7 +119,7 @@ public class AdminClientService {
     }
 
     private ClientRow setStatus(Long id, String status, String action) {
-        access.requireSuperAdmin(access.current());
+        rbac.require(access.current(), "CLIENT_MANAGE");
         ClientRow before = get(id);
         jdbc.update("UPDATE clients SET status = ?, updated_at = now(), version = version + 1 WHERE id = ?", status, id);
         ClientRow after = get(id);

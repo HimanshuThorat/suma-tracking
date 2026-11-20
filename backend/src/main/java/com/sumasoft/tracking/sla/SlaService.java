@@ -3,6 +3,7 @@ package com.sumasoft.tracking.sla;
 import com.sumasoft.tracking.audit.AuditService;
 import com.sumasoft.tracking.auth.AccessService;
 import com.sumasoft.tracking.auth.AuthenticatedUser;
+import com.sumasoft.tracking.rbac.RbacService;
 import com.sumasoft.tracking.sla.SlaDtos.AttentionTicket;
 import com.sumasoft.tracking.sla.SlaDtos.Holiday;
 import com.sumasoft.tracking.sla.SlaDtos.HolidayForm;
@@ -37,7 +38,7 @@ import java.util.Set;
 /**
  * SLA Management page (Step 37).
  *  - Settings per project: support hours, warning level, pause rule, targets per priority, holidays.
- *    Everyone who leads a project can see them; only the Super Admin changes them (audited).
+ *    Roles with SLA_VIEW see them for their own projects; SLA_MANAGE changes them (audited).
  *  - Overview: SLA % of tickets created in the chosen days, and the open tickets that need attention.
  */
 @Service
@@ -50,12 +51,14 @@ public class SlaService {
     private final AccessService access;
     private final AuditService audit;
     private final SlaEngine engine;
+    private final RbacService rbac;
     private final JdbcTemplate jdbc;
 
-    public SlaService(AccessService access, AuditService audit, SlaEngine engine, DataSource dataSource) {
+    public SlaService(AccessService access, AuditService audit, SlaEngine engine, RbacService rbac, DataSource dataSource) {
         this.access = access;
         this.audit = audit;
         this.engine = engine;
+        this.rbac = rbac;
         this.jdbc = new JdbcTemplate(dataSource);
     }
 
@@ -71,7 +74,10 @@ public class SlaService {
     @Transactional
     public Settings save(Long projectId, SettingsForm f) {
         AuthenticatedUser me = access.current();
-        access.requireSuperAdmin(me);
+        rbac.require(me, "SLA_MANAGE");
+        if (!access.canSeeProject(me, projectId)) {
+            throw AccessService.notFound("Project");
+        }
         Settings before = load(projectId);
 
         LocalTime start = LocalTime.parse(f.dayStart());
@@ -164,9 +170,7 @@ public class SlaService {
     @Transactional(readOnly = true)
     public Overview overview(Long projectId, LocalDate from, LocalDate to) {
         AuthenticatedUser me = access.current();
-        if (access.isSupportUser(me)) {
-            throw AccessService.forbidden();
-        }
+        rbac.require(me, "SLA_VIEW", "SLA_MANAGE");
         LocalDate today = LocalDate.now(ZoneId.of("Asia/Kolkata"));
         LocalDate f = from != null ? from : today.minusDays(29);
         LocalDate t = to != null ? to : today;
@@ -266,9 +270,7 @@ public class SlaService {
     // ================================================================ helpers
 
     private void requireLeadView(AuthenticatedUser me, Long projectId) {
-        if (access.isSupportUser(me)) {
-            throw AccessService.forbidden();
-        }
+        rbac.require(me, "SLA_VIEW", "SLA_MANAGE");
         if (!access.canSeeProject(me, projectId)) {
             throw AccessService.notFound("Project");
         }

@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useState } from 'react'
 import { api } from '../api.js'
+import { useCan } from '../permissions.js'
 import { Confirm, Drawer, EditIcon, Field, IconButton, PageHead, Toast } from '../components.jsx'
 import { FIX_MESSAGE, rules, useValidatedForm } from '../validation.js'
 
@@ -15,7 +16,8 @@ export default function ProjectsPage({ user }) {
   const [editing, setEditing] = useState(null)
   const [action, setAction] = useState(null)
   const [toast, setToast] = useState('')
-  const isAdmin = user.roleCode === 'SUPER_ADMIN'
+  const can = useCan()
+  const isAdmin = can('PROJECT_MANAGE')
 
   const load = useCallback(() => {
     api.projects().then(setRows).catch((e) => setError(e.message))
@@ -58,7 +60,7 @@ export default function ProjectsPage({ user }) {
                 <th scope="col">Support levels</th>
                 <th scope="col">Time zone</th>
                 <th scope="col">Status</th>
-                <th scope="col" className="actions-col">Actions</th>
+                {isAdmin && <th scope="col" className="actions-col">Actions</th>}
               </tr>
             </thead>
             <tbody>
@@ -71,15 +73,15 @@ export default function ProjectsPage({ user }) {
                   <td>{['L1', 'L2', 'L3'].filter((l) => p[`supports${l}`]).join(', ') || <span className="muted">-</span>}</td>
                   <td>{p.timeZone}</td>
                   <td><span className={`tag${p.status === 'ACTIVE' ? ' ok' : ''}`}>{p.status.charAt(0) + p.status.slice(1).toLowerCase()}</span></td>
-                  <td className="actions-col">
+                  {isAdmin && <td className="actions-col">
                     {p.status !== 'CLOSED' && <IconButton label={`Edit ${p.projectName}`} onClick={() => setEditing(p)}><EditIcon /></IconButton>}
                     {p.status === 'ACTIVE' && <button className="btn small" type="button" onClick={() => setAction({ row: p, kind: 'deactivate' })}>Deactivate</button>}
                     {p.status === 'INACTIVE' && <button className="btn small" type="button" onClick={() => setAction({ row: p, kind: 'activate' })}>Activate</button>}
                     {p.status !== 'CLOSED' && <button className="btn small" type="button" onClick={() => setAction({ row: p, kind: 'close' })}>Close</button>}
-                  </td>
+                  </td>}
                 </tr>
               ))}
-              {rows.length === 0 && <tr><td colSpan={8} className="empty-row">No projects yet.</td></tr>}
+              {rows.length === 0 && <tr><td colSpan={isAdmin ? 8 : 7} className="empty-row">No projects yet.</td></tr>}
             </tbody>
           </table>
         </div>

@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { api } from '../api.js'
+import { useCan } from '../permissions.js'
 import { PageHead, Toast } from '../components.jsx'
 import { FIX_MESSAGE } from '../validation.js'
 import { addDays, fmtDateTime, fmtMinutes, fmtNumber, todayIso } from '../format.js'
@@ -10,7 +11,8 @@ const DAYS = ['MON', 'TUE', 'WED', 'THU', 'FRI', 'SAT', 'SUN']
 
 /** SLA Management (Step 37): SLA % per project, tickets that need attention, and the targets. */
 export default function SlaPage({ user }) {
-  const isAdmin = user.roleCode === 'SUPER_ADMIN'
+  const can = useCan()
+  const isAdmin = can('SLA_MANAGE')
   const [tab, setTab] = useState('overview')
   const [projects, setProjects] = useState([])
 

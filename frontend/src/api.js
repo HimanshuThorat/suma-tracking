@@ -168,6 +168,12 @@ export const api = {
   saveSettings: (values) => request('PUT', '/api/settings', { body: { values } }),
   publicSettings: () => request('GET', '/api/settings/public'),
 
+  // Roles and permissions (Step 39)
+  myPermissions: () => request('GET', '/api/rbac/me'),
+  rbacMatrix: () => request('GET', '/api/rbac/matrix'),
+  saveRolePermissions: (code, permissions) => request('PUT', `/api/rbac/roles/${code}/permissions`, { body: { permissions } }),
+  resetRolePermissions: (code) => request('POST', `/api/rbac/roles/${code}/reset`),
+
   // Security
   roles: () => request('GET', '/api/roles'),
   createRole: (body) => request('POST', '/api/roles', { body }),

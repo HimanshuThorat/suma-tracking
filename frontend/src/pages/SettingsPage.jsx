@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useState } from 'react'
 import { api } from '../api.js'
+import { useCan } from '../permissions.js'
 import { PageHead, Toast } from '../components.jsx'
 import { FIX_MESSAGE } from '../validation.js'
 import { fmtDateTime } from '../format.js'
@@ -9,7 +10,8 @@ const GROUP_LABEL = { OPEN: 'Open or in progress', IN_PROGRESS: 'Open or in prog
 
 /** Settings (Step 38): everyone changes their password here; the Super Admin also sets tool-wide settings. */
 export default function SettingsPage({ user }) {
-  const isAdmin = user.roleCode === 'SUPER_ADMIN'
+  const can = useCan()
+  const isAdmin = can('SETTINGS_MANAGE')
   return (
     <div className="page narrow">
       <PageHead title="Settings" text={isAdmin ? 'Your account, and the settings of the whole tool.' : 'Your account.'} />

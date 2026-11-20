@@ -3,6 +3,7 @@ import {
   Area, AreaChart, Bar, BarChart, CartesianGrid, Cell, ResponsiveContainer, Tooltip, XAxis, YAxis,
 } from 'recharts'
 import { api } from '../api.js'
+import { useChartColors } from '../theme.jsx'
 import {
   GROUP_COLORS, GROUP_LABELS, addDays, fmtDay, fmtMinutes, fmtNumber, fmtPercent, monthStart, todayIso,
 } from '../format.js'
@@ -29,6 +30,7 @@ function rangeFor(key, custom) {
 }
 
 export default function DashboardPage() {
+  const cc = useChartColors()
   const [projects, setProjects] = useState([])
   // A link like #/dashboard?project=3 (from Clients & projects) opens one project directly.
   const [projectId, setProjectId] = useState(() => new URLSearchParams(window.location.hash.split('?')[1] || '').get('project') || '')
@@ -133,23 +135,23 @@ export default function DashboardPage() {
                   <AreaChart data={days} margin={{ top: 10, right: 12, left: -18, bottom: 0 }}>
                     <defs>
                       <linearGradient id="gCreated" x1="0" y1="0" x2="0" y2="1">
-                        <stop offset="0%" stopColor="#3D5AFE" stopOpacity={0.28} />
-                        <stop offset="100%" stopColor="#3D5AFE" stopOpacity={0} />
+                        <stop offset="0%" stopColor={cc.created} stopOpacity={0.28} />
+                        <stop offset="100%" stopColor={cc.created} stopOpacity={0} />
                       </linearGradient>
                     </defs>
-                    <CartesianGrid stroke="#E6EAF0" vertical={false} />
-                    <XAxis dataKey="label" tick={{ fontSize: 12, fill: '#5B6B7F' }} tickLine={false} axisLine={false}
+                    <CartesianGrid stroke={cc.grid} vertical={false} />
+                    <XAxis dataKey="label" tick={{ fontSize: 12, fill: cc.tick }} tickLine={false} axisLine={false}
                       interval="preserveStartEnd" minTickGap={18} />
-                    <YAxis allowDecimals={false} tick={{ fontSize: 12, fill: '#5B6B7F' }} tickLine={false} axisLine={false} />
+                    <YAxis allowDecimals={false} tick={{ fontSize: 12, fill: cc.tick }} tickLine={false} axisLine={false} />
                     <Tooltip content={<DayTip />} />
-                    <Area type="monotone" dataKey="created" name="Created" stroke="#3D5AFE" strokeWidth={2} fill="url(#gCreated)" />
-                    <Area type="monotone" dataKey="done" name="Done" stroke="#14A38B" strokeWidth={2} fill="transparent" />
+                    <Area type="monotone" dataKey="created" name="Created" stroke={cc.created} strokeWidth={2} fill="url(#gCreated)" />
+                    <Area type="monotone" dataKey="done" name="Done" stroke={cc.done} strokeWidth={2} fill="transparent" />
                   </AreaChart>
                 </ResponsiveContainer>
               </div>
               <div className="legend">
-                <span><i style={{ background: '#3D5AFE' }} />Created</span>
-                <span><i style={{ background: '#14A38B' }} />Done</span>
+                <span><i style={{ background: cc.created }} />Created</span>
+                <span><i style={{ background: cc.done }} />Done</span>
               </div>
             </section>
 
@@ -167,15 +169,15 @@ export default function DashboardPage() {
           <div className="grid three">
             <section className="panel">
               <PanelHead title="How tickets arrive" hint="Source column: email, chat, call" />
-              <BarList items={data.byChannel} color="#3D5AFE" />
+              <BarList items={data.byChannel} color={cc.channel} />
             </section>
             <section className="panel">
               <PanelHead title="Top topics" hint="The ten most common" />
-              <BarList items={data.byTopic} color="#7B61FF" />
+              <BarList items={data.byTopic} color={cc.topic} />
             </section>
             <section className="panel">
               <PanelHead title="Projects" hint={projectId ? 'Filtered to one project' : 'Tickets per project'} />
-              <BarList items={data.byProject} color="#14A38B" />
+              <BarList items={data.byProject} color={cc.project} />
             </section>
           </div>
         </>
@@ -314,15 +316,16 @@ function AgentTable({ agents }) {
 }
 
 function BarList({ items, color }) {
+  const cc = useChartColors()
   if (!items.length) return <p className="muted">Nothing to show.</p>
   return (
     <div className="chart">
       <ResponsiveContainer width="100%" height={Math.max(120, items.length * 34)}>
         <BarChart data={items} layout="vertical" margin={{ top: 0, right: 36, left: 0, bottom: 0 }}>
           <XAxis type="number" hide allowDecimals={false} />
-          <YAxis type="category" dataKey="name" width={150} tick={{ fontSize: 12, fill: '#334155' }} tickLine={false} axisLine={false} />
-          <Tooltip cursor={{ fill: '#F1F4F9' }} formatter={(v) => [fmtNumber(v), 'Tickets']} />
-          <Bar dataKey="count" radius={[0, 4, 4, 0]} barSize={16} label={{ position: 'right', fontSize: 12, fill: '#334155' }}>
+          <YAxis type="category" dataKey="name" width={150} tick={{ fontSize: 12, fill: cc.label }} tickLine={false} axisLine={false} />
+          <Tooltip cursor={{ fill: cc.cursor }} formatter={(v) => [fmtNumber(v), 'Tickets']} />
+          <Bar dataKey="count" radius={[0, 4, 4, 0]} barSize={16} label={{ position: 'right', fontSize: 12, fill: cc.label }}>
             {items.map((i) => <Cell key={i.name} fill={color} />)}
           </Bar>
         </BarChart>
