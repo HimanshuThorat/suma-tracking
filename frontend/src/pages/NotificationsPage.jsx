@@ -12,6 +12,7 @@ const KIND = {
   TICKET_ESCALATED: { label: 'Escalated', tone: 'bad' },
   TICKET_ASSIGNED: { label: 'Assigned to you', tone: 'info' },
   DAILY_SUMMARY: { label: 'Daily summary', tone: 'ok' },
+  ATTENDANCE: { label: 'Attendance', tone: 'warn' },
 }
 
 /** The signed-in employee's notifications (Step 37). */

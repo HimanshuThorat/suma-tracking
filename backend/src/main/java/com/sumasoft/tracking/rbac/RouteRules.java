@@ -37,6 +37,14 @@ public final class RouteRules {
         add("GET", "/api/ticket-statuses", "see ticket statuses");
         add("GET", "/api/ticket-priorities", "see ticket priorities");
         add("GET", "/api/projects", "see own projects");
+        add("GET", "/api/attendance/me", "see own attendance");
+        add("*", "/api/attendance/me/**", "punch in, breaks and punch out");
+
+        // ---- attendance of other people (Step 41)
+        add("GET", "/api/attendance/team", "view team attendance", "ATTENDANCE_VIEW", "ATTENDANCE_MANAGE");
+        add("GET", "/api/attendance/people/**", "view team attendance", "ATTENDANCE_VIEW", "ATTENDANCE_MANAGE");
+        add("GET", "/api/attendance/schedules", "view working hours", "ATTENDANCE_VIEW", "ATTENDANCE_MANAGE");
+        add("*", "/api/attendance/**", "manage working hours", "ATTENDANCE_MANAGE");
 
         // ---- dashboard, reports, workload
         add("GET", "/api/dashboard", "view the dashboard", "DASHBOARD_VIEW", "REPORT_VIEW");

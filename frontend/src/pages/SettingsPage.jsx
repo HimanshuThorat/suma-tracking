@@ -137,6 +137,10 @@ function ToolSettings() {
       const s = `sla.default.${p}.resolutionMinutes`
       if (!e[r] && !e[s] && Number(v[s]) < Number(v[r])) e[s] = `${name}: resolution cannot be shorter than first response.`
     })
+    const sh = 'attendance.defaultShiftMinutes'
+    const br = 'attendance.defaultBreakMinutes'
+    if (v[sh] !== undefined && !e[sh] && !e[br] && Number(v[br]) >= Number(v[sh])) e[br] = 'The break must be shorter than the shift.'
+
     return e
   }
 
@@ -225,6 +229,13 @@ function ToolSettings() {
           {input('automation.alertLookbackDays', { inputMode: 'numeric', maxLength: 3 })}
           {input('automation.maxNotificationsPerRun', { inputMode: 'numeric', maxLength: 4 })}
           {input('automation.dailySummaryHour', { inputMode: 'numeric', maxLength: 2 })}
+        </div>
+      </section>
+      <section className="panel">
+        <div className="panel-head"><h2>Attendance</h2><p>In hours. Everyone gets these unless their own hours are set on the Attendance page.</p></div>
+        <div className="form two-col">
+          {input('attendance.defaultShiftMinutes', { inputMode: 'decimal', maxLength: 5 })}
+          {input('attendance.defaultBreakMinutes', { inputMode: 'decimal', maxLength: 5 })}
         </div>
       </section>
       {error && <div className="alert error" role="alert">{error}</div>}

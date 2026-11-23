@@ -74,6 +74,22 @@ async function request(method, path, { body, form, query } = {}) {
 }
 
 export const api = {
+  // attendance (Step 41)
+  attendanceMe: () => request('GET', '/api/attendance/me'),
+  punchIn: (device) => request('POST', '/api/attendance/me/punch-in', { body: device }),
+  breakStart: (device) => request('POST', '/api/attendance/me/break-start', { body: device }),
+  breakEnd: (device) => request('POST', '/api/attendance/me/break-end', { body: device }),
+  punchOut: (device) => request('POST', '/api/attendance/me/punch-out', { body: device }),
+  attendanceSeen: (device) => request('POST', '/api/attendance/me/seen', { body: device }),
+  attendanceHistory: (days) => request('GET', '/api/attendance/me/history', { query: { days } }),
+  attendanceTeam: (date) => request('GET', '/api/attendance/team', { query: { date } }),
+  attendanceEvents: (userId, days) => request('GET', `/api/attendance/people/${userId}/events`, { query: { days } }),
+  attendanceDays: (userId, days) => request('GET', `/api/attendance/people/${userId}/days`, { query: { days } }),
+  workSchedules: () => request('GET', '/api/attendance/schedules'),
+  saveWorkSchedule: (userId, shiftMinutes, breakMinutes) =>
+    request('PUT', `/api/attendance/schedules/${userId}`, { body: { shiftMinutes, breakMinutes } }),
+  closeAttendanceDay: (dayId, punchOutTime, note) =>
+    request('POST', `/api/attendance/days/${dayId}/close`, { body: { punchOutTime, note } }),
   // Login
   login: (email, password) => request('POST', '/api/auth/login', { body: { email, password } }),
   logout: () => request('POST', '/api/auth/logout'),

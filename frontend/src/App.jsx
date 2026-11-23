@@ -18,11 +18,14 @@ import SettingsPage from './pages/SettingsPage.jsx'
 import SlaPage from './pages/SlaPage.jsx'
 import NotificationsPage from './pages/NotificationsPage.jsx'
 import AutomationPage from './pages/AutomationPage.jsx'
+import AttendancePage from './pages/AttendancePage.jsx'
+import { AttendanceProvider, PunchBanner, TopbarTimer } from './attendance.jsx'
 
 // Step 39: each menu item needs one of these permissions (no list = every signed-in employee).
 // The server checks the same permissions on every API call, so hiding is not the protection.
 const MENU = [
   { key: 'dashboard', label: 'Dashboard', perms: ['DASHBOARD_VIEW'], icon: 'M4 20V10M10 20V4M16 20v-7M22 20H2' },
+  { key: 'attendance', label: 'Attendance', icon: 'M12 7v5l3 2M12 21a9 9 0 1 0 0-18 9 9 0 0 0 0 18M5 3L2 6M19 3l3 3' },
   { key: 'clients', label: 'Client Management', icon: 'M3 21h18M5 21V7l7-4 7 4v14M9 21v-6h6v6', perms: ['CLIENT_MANAGE', 'CLIENT_EDIT_ASSIGNED'] },
   { key: 'projects', label: 'Project Management', icon: 'M3 7h18v13H3zM8 7V4h8v3', perms: ['PROJECT_VIEW', 'PROJECT_MANAGE'] },
   { key: 'integrations', label: 'Integration Management', icon: 'M8 7h8M8 17h8M4 12h16M12 3v4M12 17v4', perms: ['IMPORT_VIEW', 'IMPORT_RUN'] },
@@ -154,6 +157,7 @@ export default function App() {
 
   return (
     <PermissionContext.Provider value={ctx}>
+      <AttendanceProvider key={user.id}>
       <div className={`shell${navOpen ? ' nav-open' : ''}`}>
         <aside className="sidebar" aria-label="Main menu">
           <div className="brand">
@@ -201,6 +205,7 @@ export default function App() {
                 <input id="quick-ticket" name="ticket" placeholder="Open ticket no. e.g. 124628" maxLength={60} autoComplete="off" />
               </form>
             )}
+            <TopbarTimer />
             <ThemeToggle theme={theme} onChange={setTheme} compact />
             <a className="icon-plain bell" href="#/notifications" aria-label={unread ? `Notifications, ${unread} unread` : 'Notifications'}>
               <svg width="20" height="20" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M18 8a6 6 0 1 0-12 0c0 7-3 9-3 9h18s-3-2-3-9M13.7 21a2 2 0 0 1-3.4 0" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" /></svg>
@@ -232,6 +237,7 @@ export default function App() {
           </header>
 
           <main className="main" id="main">
+            {current !== 'attendance' && <PunchBanner />}
             {denied && <AccessDenied page={wanted.label} role={user.roleName} />}
             {current === 'dashboard' && <DashboardPage user={user} />}
             {current === 'clients' && <ClientsPage user={user} />}
@@ -246,9 +252,11 @@ export default function App() {
             {current === 'notifications' && <NotificationsPage user={user} onCountChange={setUnread} />}
             {current === 'knowledge' && <KnowledgePage user={user} />}
             {current === 'settings' && <SettingsPage user={user} />}
+            {current === 'attendance' && <AttendancePage user={user} />}
           </main>
         </div>
       </div>
+      </AttendanceProvider>
     </PermissionContext.Provider>
   )
 }

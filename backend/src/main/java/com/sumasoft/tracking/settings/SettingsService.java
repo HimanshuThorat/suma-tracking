@@ -49,7 +49,11 @@ public class SettingsService {
             new Def("automation.maxNotificationsPerRun", "AUTOMATION", "Most notifications in one run",
                     "Protects people from a flood of alerts. The rest go out in the next run. 50 to 2000.", "INT", 50, 2000),
             new Def("automation.dailySummaryHour", "AUTOMATION", "Daily summary hour (India time, 0-23)",
-                    "The daily summary goes out at the first run after this hour.", "INT", 0, 23));
+                    "The daily summary goes out at the first run after this hour.", "INT", 0, 23),
+            new Def("attendance.defaultShiftMinutes", "ATTENDANCE", "Normal shift, including the break",
+                    "For everyone without their own hours. 540 minutes = 9 hours.", "MINUTES", 60, 960),
+            new Def("attendance.defaultBreakMinutes", "ATTENDANCE", "Normal break (compulsory)",
+                    "Attendance is marked only when this break is taken. 60 minutes = 1 hour.", "MINUTES", 0, 240));
 
     private static final Map<String, String> FALLBACK = Map.ofEntries(
             Map.entry("company.name", "Suma Soft"), Map.entry("project.defaultTimeZone", "Asia/Kolkata"),
@@ -58,7 +62,8 @@ public class SettingsService {
             Map.entry("sla.default.MEDIUM.responseMinutes", "240"), Map.entry("sla.default.MEDIUM.resolutionMinutes", "1440"),
             Map.entry("sla.default.LOW.responseMinutes", "480"), Map.entry("sla.default.LOW.resolutionMinutes", "2880"),
             Map.entry("automation.alertLookbackDays", "30"), Map.entry("automation.maxNotificationsPerRun", "300"),
-            Map.entry("automation.dailySummaryHour", "9"));
+            Map.entry("automation.dailySummaryHour", "9"),
+            Map.entry("attendance.defaultShiftMinutes", "540"), Map.entry("attendance.defaultBreakMinutes", "60"));
 
     public record Setting(String key, String group, String label, String help, String type, Integer min, Integer max,
                           String value, Instant updatedAt, String updatedBy) {
