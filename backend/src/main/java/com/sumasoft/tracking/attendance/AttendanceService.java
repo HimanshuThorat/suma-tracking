@@ -441,7 +441,7 @@ public class AttendanceService {
         }
         String ip = request.getRemoteAddr();
         String forwarded = request.getHeader("X-Forwarded-For");
-        if (forwarded != null && !forwarded.isBlank() && isLoopback(ip)) {
+        if (forwarded != null && !forwarded.isBlank() && (isLoopback(ip) || (TRUST_PROXY && isPrivate(ip)))) {
             ip = forwarded.split(",")[0].trim();
         }
         if (ip != null && (ip.equals("0:0:0:0:0:0:0:1") || ip.equals("::ffff:127.0.0.1"))) {
@@ -451,6 +451,34 @@ public class AttendanceService {
             ip = ip.substring(7);
         }
         return clip(ip, 64);
+    }
+
+    /**
+     * Inside Docker or Kubernetes the website server (nginx) is the one that calls the backend, from a private
+     * address. SUMA_TRUST_PROXY=true (set only in docker-compose.yml and k8s) lets the backend read the real
+     * address that nginx passes on. Running normally on a computer, it stays off.
+     */
+    private static final boolean TRUST_PROXY = "true".equalsIgnoreCase(System.getenv("SUMA_TRUST_PROXY"));
+
+    static boolean isPrivate(String ip) {
+        if (ip == null) {
+            return false;
+        }
+        String v = ip.startsWith("::ffff:") ? ip.substring(7) : ip;
+        if (v.startsWith("10.") || v.startsWith("192.168.")) {
+            return true;
+        }
+        if (v.startsWith("172.")) {
+            String[] p = v.split("\\.");
+            try {
+                int second = Integer.parseInt(p[1]);
+                return second >= 16 && second <= 31;
+            } catch (RuntimeException e) {
+                return false;
+            }
+        }
+        String lower = v.toLowerCase();
+        return lower.startsWith("fc") || lower.startsWith("fd");
     }
 
     private static boolean isLoopback(String ip) {

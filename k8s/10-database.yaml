@@ -1,0 +1,91 @@
+# PostgreSQL 17 for Suma Tracking.
+# The password comes from the Secret "suma-db", which the start script makes from what you type.
+# No password is written in this file.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: db-init
+  namespace: suma-tracking
+data:
+  01-create-app-user.sh: |
+    #!/bin/sh
+    # Runs once, on an empty database: creates suma_app (not a superuser) and the database suma_tracking.
+    set -e
+    psql -v ON_ERROR_STOP=1 --username "$POSTGRES_USER" --dbname postgres -v app_pw="$POSTGRES_PASSWORD" <<'EOSQL'
+    CREATE ROLE suma_app LOGIN NOSUPERUSER NOCREATEDB NOCREATEROLE PASSWORD :'app_pw';
+    CREATE DATABASE suma_tracking OWNER suma_app;
+    ALTER ROLE postgres PASSWORD NULL;
+    EOSQL
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: db
+  namespace: suma-tracking
+spec:
+  selector:
+    app: db
+  ports:
+    - name: postgres
+      port: 5432
+      targetPort: 5432
+---
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: db
+  namespace: suma-tracking
+spec:
+  serviceName: db
+  replicas: 1
+  selector:
+    matchLabels:
+      app: db
+  template:
+    metadata:
+      labels:
+        app: db
+    spec:
+      containers:
+        - name: postgres
+          image: postgres:17-alpine
+          ports:
+            - containerPort: 5432
+          env:
+            - name: POSTGRES_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: suma-db
+                  key: password
+            - name: PGDATA
+              value: /var/lib/postgresql/data/pgdata
+          volumeMounts:
+            - name: data
+              mountPath: /var/lib/postgresql/data
+            - name: init
+              mountPath: /docker-entrypoint-initdb.d
+              readOnly: true
+          readinessProbe:
+            exec:
+              command: ["sh", "-c", "pg_isready -h 127.0.0.1 -U suma_app -d suma_tracking"]
+            initialDelaySeconds: 5
+            periodSeconds: 5
+          resources:
+            requests:
+              cpu: 100m
+              memory: 256Mi
+            limits:
+              memory: 1Gi
+      volumes:
+        - name: init
+          configMap:
+            name: db-init
+  # The data is kept on this disk even when everything is stopped
+  volumeClaimTemplates:
+    - metadata:
+        name: data
+      spec:
+        accessModes: ["ReadWriteOnce"]
+        resources:
+          requests:
+            storage: 5Gi

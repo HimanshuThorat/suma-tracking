@@ -1,0 +1,8 @@
+# Suma Tracking on Kubernetes (Docker Desktop). Everything lives in this namespace.
+# Start with:  powershell -ExecutionPolicy Bypass -File scripts\k8s-start.ps1
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: suma-tracking
+  labels:
+    app.kubernetes.io/part-of: suma-tracking

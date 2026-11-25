@@ -1,0 +1,80 @@
+# Suma Tracking backend (Spring Boot). Uses the image built by "docker compose build".
+apiVersion: v1
+kind: Service
+metadata:
+  name: backend
+  namespace: suma-tracking
+spec:
+  selector:
+    app: backend
+  ports:
+    - name: http
+      port: 8080
+      targetPort: 8080
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: backend
+  namespace: suma-tracking
+spec:
+  # One copy only: the attendance and automation timers must not run twice
+  replicas: 1
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      app: backend
+  template:
+    metadata:
+      labels:
+        app: backend
+    spec:
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 10001
+      containers:
+        - name: backend
+          image: suma-tracking-backend:local
+          imagePullPolicy: Never
+          ports:
+            - containerPort: 8080
+          env:
+            - name: SPRING_DATASOURCE_URL
+              value: jdbc:postgresql://db:5432/suma_tracking
+            - name: SUMA_DB_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: suma-db
+                  key: password
+            - name: SUMA_TRUST_PROXY
+              value: "true"
+            # Present only for one start, when the first Super Admin is made (see scripts\k8s-start.ps1)
+            - name: SUMA_BOOTSTRAP_ADMIN_EMAIL
+              valueFrom:
+                secretKeyRef:
+                  name: suma-bootstrap
+                  key: email
+                  optional: true
+            - name: SUMA_BOOTSTRAP_ADMIN_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: suma-bootstrap
+                  key: password
+                  optional: true
+          readinessProbe:
+            tcpSocket:
+              port: 8080
+            initialDelaySeconds: 15
+            periodSeconds: 5
+          livenessProbe:
+            tcpSocket:
+              port: 8080
+            initialDelaySeconds: 180
+            periodSeconds: 20
+          resources:
+            requests:
+              cpu: 250m
+              memory: 512Mi
+            limits:
+              memory: 1536Mi
