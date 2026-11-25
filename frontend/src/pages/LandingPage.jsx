@@ -9,7 +9,7 @@ const FEATURES = [
   { t: 'Daily sheets, no duplicates', d: 'Upload the month\u2019s sheet as often as you like. New tickets are created, changed ones updated, the rest left alone. Check first, then import.', i: 'M12 3v12m0 0l-4-4m4 4l4-4M4 17v3h16v-3' },
   { t: 'SLA you can trust', d: 'First response and resolution targets per project and priority, 24x7 or business hours with holidays. At-risk and breached tickets come first.', i: 'M12 7v5l3 3M12 21a9 9 0 1 0 0-18 9 9 0 0 0 0 18' },
   { t: 'Automation every 5 minutes', d: 'SLA alerts, assignment alerts, auto-escalation, auto-assignment to the least busy L1 and a morning summary. Every action is logged.', i: 'M13 2L4 14h7l-1 8 9-12h-7z' },
-  { t: 'Role-based access', d: '8 roles and 27 permissions, checked by the server on every request. People see only the clients, projects and tickets they belong to.', i: 'M12 3l7 3v6c0 4-3 7.5-7 9-4-1.5-7-5-7-9V6z' },
+  { t: 'Role-based access', d: '8 roles and 28 permissions, checked by the server on every request. People see only the clients, projects and tickets they belong to.', i: 'M12 3l7 3v6c0 4-3 7.5-7 9-4-1.5-7-5-7-9V6z' },
   { t: 'Dashboards and reports', d: 'Tickets by day, hour, status, project, channel and agent for any dates, plus project reports you can download.', i: 'M4 20V10M10 20V4M16 20v-7M22 20H2' },
   { t: 'Help in plain words', d: 'A Knowledge Base of simple guides. Search with a word, or ask in your own words, even in Hinglish.', i: 'M4 19.5A2.5 2.5 0 0 1 6.5 17H20V3H6.5A2.5 2.5 0 0 0 4 5.5z' },
   { t: 'Attendance with device checks', d: 'Punch in, compulsory breaks and punch out with a live timer. A break over time, a missed break, a new laptop or a shared computer is flagged at once.', i: 'M12 7v5l3 2M12 21a9 9 0 1 0 0-18 9 9 0 0 0 0 18' },
@@ -17,7 +17,7 @@ const FEATURES = [
 ]
 
 const FACTS = [
-  ['3', 'ticket sources joined'], ['8', 'roles'], ['27', 'permissions checked on every request'], ['5 min', 'automation cycle'], ['44', 'help guides'],
+  ['3', 'ticket sources joined'], ['8', 'roles'], ['28', 'permissions checked on every request'], ['5 min', 'automation cycle'], ['47', 'help guides'],
 ]
 
 const SECURITY = [

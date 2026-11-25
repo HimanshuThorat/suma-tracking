@@ -17,6 +17,7 @@ export default function SettingsPage({ user }) {
       <PageHead title="Settings" text={isAdmin ? 'Your account, and the settings of the whole tool.' : 'Your account.'} />
       <MyAccount user={user} />
       {isAdmin && <ToolSettings />}
+      {user && user.roleCode === 'SUPER_ADMIN' && <EmailSetup />}
       {isAdmin && <Reference />}
     </div>
   )
@@ -232,10 +233,11 @@ function ToolSettings() {
         </div>
       </section>
       <section className="panel">
-        <div className="panel-head"><h2>Attendance</h2><p>In hours. Everyone gets these unless their own hours are set on the Attendance page.</p></div>
+        <div className="panel-head"><h2>Attendance</h2><p>Shift and break in hours (everyone gets these unless their own hours are set on the Attendance page). Idle check in minutes.</p></div>
         <div className="form two-col">
           {input('attendance.defaultShiftMinutes', { inputMode: 'decimal', maxLength: 5 })}
           {input('attendance.defaultBreakMinutes', { inputMode: 'decimal', maxLength: 5 })}
+          {input('attendance.idleMinutes', { inputMode: 'numeric', maxLength: 3 })}
         </div>
       </section>
       {error && <div className="alert error" role="alert">{error}</div>}
@@ -266,6 +268,85 @@ function Reference() {
         </ul>
       </div>
       <p className="fine"><a href="#/knowledge/ticket-statuses">Read: What each ticket status means</a></p>
+    </section>
+  )
+}
+
+/** Step 43: is email working? The settings themselves are in config/mail-and-reports.properties. Super Admin only. */
+function EmailSetup() {
+  const [status, setStatus] = useState(null)
+  const [log, setLog] = useState([])
+  const [error, setError] = useState('')
+  const [msg, setMsg] = useState('')
+  const [busy, setBusy] = useState(false)
+
+  const load = useCallback(() => {
+    api.mailStatus().then(setStatus).catch((e) => setError(e.message))
+    api.mailLog().then((l) => setLog(l || [])).catch(() => {})
+  }, [])
+  useEffect(() => { load() }, [load])
+
+  async function test() {
+    setBusy(true)
+    setMsg('')
+    setError('')
+    try {
+      const r = await api.mailTest()
+      if (r.status === 'SENT') setMsg('Test email sent. Check your inbox (and Spam).')
+      else setError(r.message)
+      load()
+    } catch (e) {
+      setError(e.message)
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  return (
+    <section className="panel">
+      <div className="panel-head">
+        <h2>Email</h2>
+        <p>Used for password reset links and report emails. To change the sender, server or report timings, edit the file
+          <code> config/mail-and-reports.properties</code>. Changes are read within 1 minute.</p>
+      </div>
+      {!status && !error && <p className="muted">Checking...</p>}
+      {status && (
+        <div className={`alert ${status.ready ? 'ok' : 'error'}`} role="status">
+          <strong>{status.ready ? 'Email is ready.' : 'Email is not ready.'}</strong> {status.problem || ''}
+        </div>
+      )}
+      {status && (
+        <dl className="mail-facts">
+          <div><dt>Sends from</dt><dd>{status.from || '\u2014'}</dd></div>
+          <div><dt>Email server</dt><dd className="mono">{status.host || '\u2014'}:{status.port}</dd></div>
+          <div><dt>Links in emails open</dt><dd className="mono">{status.publicUrl}</dd></div>
+          <div><dt>Settings file</dt><dd className="mono small">{status.configFile || 'not found'}</dd></div>
+        </dl>
+      )}
+      {msg && <div className="alert ok" role="status">{msg}</div>}
+      {error && <div className="alert error" role="alert">{error}</div>}
+      <div className="modal-actions" style={{ justifyContent: 'flex-start' }}>
+        <button type="button" className="btn" disabled={busy || !status || !status.ready} onClick={test}>{busy ? 'Sending...' : 'Send me a test email'}</button>
+        <button type="button" className="btn ghost" onClick={load}>Check again</button>
+      </div>
+      <h3 className="mail-log-title">Last emails</h3>
+      <div className="table-wrap">
+        <table className="table compact">
+          <thead><tr><th scope="col">When</th><th scope="col">What</th><th scope="col">To</th><th scope="col">Result</th></tr></thead>
+          <tbody>
+            {log.map((r) => (
+              <tr key={r.id}>
+                <td className="small">{fmtDateTime(r.at)}</td>
+                <td className="small">{r.subject}{r.attachment ? <span className="muted block">{r.attachment}</span> : null}</td>
+                <td className="small">{r.to}</td>
+                <td className="small">{r.status === 'SENT' ? <span className="pill ok">Sent</span> : <span className="pill bad" title={r.error || ''}>{r.status === 'FAILED' ? 'Failed' : 'Not set up'}</span>}
+                  {r.error && <span className="muted block">{r.error}</span>}</td>
+              </tr>
+            ))}
+            {!log.length && <tr><td colSpan={4} className="muted">No emails yet.</td></tr>}
+          </tbody>
+        </table>
+      </div>
     </section>
   )
 }

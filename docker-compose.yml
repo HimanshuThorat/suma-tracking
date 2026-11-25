@@ -33,9 +33,15 @@ services:
       SPRING_DATASOURCE_URL: jdbc:postgresql://db:5432/suma_tracking
       SUMA_DB_PASSWORD: ${SUMA_DB_PASSWORD:-}
       SUMA_TRUST_PROXY: "true"
+      # Step 43: email. The settings are in config/mail-and-reports.properties; the password is typed at start.
+      SUMA_CONFIG_FILE: /app/config/mail-and-reports.properties
+      SUMA_MAIL_PASSWORD: ${SUMA_MAIL_PASSWORD:-}
       # Used only once, by the start script, to give the first Super Admin a temporary password
       SUMA_BOOTSTRAP_ADMIN_EMAIL: ${SUMA_BOOTSTRAP_ADMIN_EMAIL:-}
       SUMA_BOOTSTRAP_ADMIN_PASSWORD: ${SUMA_BOOTSTRAP_ADMIN_PASSWORD:-}
+    volumes:
+      # edit config/mail-and-reports.properties on your computer; the backend reads it within 1 minute
+      - ./config:/app/config:ro
     depends_on:
       db:
         condition: service_healthy

@@ -5,6 +5,7 @@ import com.sumasoft.tracking.attendance.AttendanceDtos.CloseForm;
 import com.sumasoft.tracking.attendance.AttendanceDtos.Day;
 import com.sumasoft.tracking.attendance.AttendanceDtos.DeviceInfo;
 import com.sumasoft.tracking.attendance.AttendanceDtos.Event;
+import com.sumasoft.tracking.attendance.AttendanceDtos.IdleForm;
 import com.sumasoft.tracking.attendance.AttendanceDtos.MyDay;
 import com.sumasoft.tracking.attendance.AttendanceDtos.Schedule;
 import com.sumasoft.tracking.attendance.AttendanceDtos.ScheduleForm;
@@ -114,10 +115,10 @@ public class AttendanceService {
     record Live(long elapsed, long worked, long onBreak, long continuous, Instant onBreakSince) {
     }
 
-    private static final String DAY_COLS = "id, user_id, work_date, punch_in_at, punch_out_at, status, shift_minutes, "
+    static final String DAY_COLS = "id, user_id, work_date, punch_in_at, punch_out_at, status, shift_minutes, "
             + "break_minutes, marked, flags, close_note";
 
-    private static DayRow dayRow(ResultSet rs, int n) throws SQLException {
+    static DayRow dayRow(ResultSet rs, int n) throws SQLException {
         Object marked = rs.getObject("marked");
         return new DayRow(rs.getLong("id"), rs.getLong("user_id"), rs.getDate("work_date").toLocalDate(),
                 inst(rs.getTimestamp("punch_in_at")), inst(rs.getTimestamp("punch_out_at")), rs.getString("status"),
@@ -125,7 +126,7 @@ public class AttendanceService {
                 rs.getString("flags"), rs.getString("close_note"));
     }
 
-    private List<BreakRow> breaks(long dayId) {
+    List<BreakRow> breaks(long dayId) {
         return jdbc.query("SELECT started_at, ended_at, kind, break_type FROM attendance_breaks WHERE day_id = ? ORDER BY started_at",
                 (rs, n) -> new BreakRow(inst(rs.getTimestamp("started_at")), inst(rs.getTimestamp("ended_at")), rs.getString("kind"),
                         rs.getString("break_type")), dayId);
@@ -252,7 +253,7 @@ public class AttendanceService {
         return why.isEmpty() ? "Marked present" : "Not marked: " + String.join(" and ", why);
     }
 
-    private Day toDay(DayRow d, Instant now) {
+    Day toDay(DayRow d, Instant now) {
         List<BreakRow> b = breaks(d.id());
         Live l = live(d, b, now);
         List<BreakItem> items = new ArrayList<>();
@@ -277,7 +278,7 @@ public class AttendanceService {
         DayRow today = open != null ? open : dayOn(me.userId(), LocalDate.now(ZONE));
         boolean done = open == null && today != null;
         return new MyDay(now, schedule(me.userId()), today == null ? null : toDay(today, now),
-                done, done && access.isSuperAdmin(me), clientIp(request));
+                done, done && access.isSuperAdmin(me), clientIp(request), setting("attendance.idleMinutes", 20));
     }
 
     @Transactional(readOnly = true)
@@ -393,6 +394,53 @@ public class AttendanceService {
                 Map.of("punchOutAt", out.toString()), Map.of("punchInAgainAt", now.toString()));
     }
 
+    /**
+     * Step 43: the screen was idle (no mouse or keyboard) and the person answered the "Are you there?" box.
+     * WORKING keeps the time as work. A break type saves the idle time as that break.
+     * Every answer is saved in attendance_idle and the day gets the IDLE flag.
+     */
+    @Transactional
+    public MyDay idle(IdleForm form, HttpServletRequest request) {
+        AuthenticatedUser me = access.current();
+        DayRow d = requireOpen(me.userId());
+        if ("ON_BREAK".equals(d.status())) {
+            throw new ResponseStatusException(HttpStatus.CONFLICT, "You are on a break already");
+        }
+        Instant now = Instant.now();
+        // the idle time cannot start before the punch-in, the end of the last break, or 12 hours ago
+        Instant earliest = d.punchInAt();
+        for (BreakRow b : breaks(d.id())) {
+            if (b.endedAt() != null && b.endedAt().isAfter(earliest)) {
+                earliest = b.endedAt();
+            }
+        }
+        Instant twelve = now.minus(Duration.ofHours(12));
+        if (earliest.isBefore(twelve)) {
+            earliest = twelve;
+        }
+        Instant from = form.idleFrom() == null ? now : form.idleFrom();
+        if (from.isBefore(earliest)) {
+            from = earliest;
+        }
+        if (from.isAfter(now)) {
+            from = now;
+        }
+        String answer = form.answer();
+        boolean isBreak = !"WORKING".equals(answer);
+        String note = form.note() == null ? null : clip(form.note().replaceAll("[\\p{Cntrl}]", " ").trim(), 200);
+        if (isBreak) {
+            jdbc.update("INSERT INTO attendance_breaks (day_id, started_at, ended_at, break_type) VALUES (?, ?, ?, ?)",
+                    d.id(), Timestamp.from(from), Timestamp.from(now), answer);
+        }
+        jdbc.update("INSERT INTO attendance_idle (user_id, day_id, idle_from, idle_to, answer, break_type, note) VALUES (?, ?, ?, ?, ?, ?, ?)",
+                me.userId(), d.id(), Timestamp.from(from), Timestamp.from(now), isBreak ? "BREAK" : "WORKING",
+                isBreak ? answer : null, note == null || note.isEmpty() ? null : note);
+        addDayFlags(d.id(), List.of("IDLE"));
+        DeviceInfo device = new DeviceInfo(form.deviceId(), form.deviceLabel(), null);
+        record(me.userId(), d.id(), "IDLE", device, request, null);
+        return me(request);
+    }
+
     private DayRow requireOpen(long userId) {
         DayRow d = openDay(userId, true);
         if (d == null) {
@@ -435,7 +483,7 @@ public class AttendanceService {
     // ============================================================== IP address and device
 
     /** The caller's IP. Behind the local website proxy the real address is in X-Forwarded-For. */
-    static String clientIp(HttpServletRequest request) {
+    public static String clientIp(HttpServletRequest request) {
         if (request == null) {
             return null;
         }
@@ -578,14 +626,15 @@ public class AttendanceService {
         for (String m : more) {
             add.addAll(split(m));
         }
-        add.removeIf(s -> !s.equals("NEW_DEVICE") && !s.equals("NEW_IP") && !s.equals("SHARED_DEVICE") && !s.equals("UNKNOWN_DEVICE"));
+        add.removeIf(s -> !s.equals("NEW_DEVICE") && !s.equals("NEW_IP") && !s.equals("SHARED_DEVICE") && !s.equals("UNKNOWN_DEVICE")
+                && !s.equals("IDLE"));
         jdbc.update("UPDATE attendance_days SET flags = ? WHERE id = ?", clip(join(merge(split(now.get(0)), add)), 400), dayId);
     }
 
     // ============================================================== who may see whom
 
     /** People this viewer may see: everyone for the Super Admin, otherwise people who share an active project. */
-    private Set<Long> visibleUsers(AuthenticatedUser me) {
+    Set<Long> visibleUsers(AuthenticatedUser me) {
         if (access.isSuperAdmin(me) || access.seesEverything(me)) {
             return new LinkedHashSet<>(jdbc.queryForList("SELECT id FROM users WHERE status = 'ACTIVE' ORDER BY full_name", Long.class));
         }
@@ -863,7 +912,7 @@ public class AttendanceService {
 
     // ============================================================== small helpers
 
-    private Map<String, Object> person(long id) {
+    Map<String, Object> person(long id) {
         List<Map<String, Object>> rows = jdbc.queryForList("SELECT u.full_name, u.employee_code, r.name AS role_name, r.code AS role_code "
                 + "FROM users u JOIN roles r ON r.id = u.role_id WHERE u.id = ?", id);
         return rows.isEmpty() ? null : rows.get(0);
@@ -906,7 +955,7 @@ public class AttendanceService {
         return out;
     }
 
-    private static final Set<String> STORED = Set.of("NEW_DEVICE", "NEW_IP", "SHARED_DEVICE", "UNKNOWN_DEVICE", "FORGOT_PUNCH_OUT");
+    private static final Set<String> STORED = Set.of("NEW_DEVICE", "NEW_IP", "SHARED_DEVICE", "UNKNOWN_DEVICE", "FORGOT_PUNCH_OUT", "IDLE");
 
     /** Only device flags and "forgot to punch out" are kept; the rest are worked out again from the times. */
     static List<String> kept(String flags) {

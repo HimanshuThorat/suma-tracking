@@ -53,7 +53,9 @@ public class SettingsService {
             new Def("attendance.defaultShiftMinutes", "ATTENDANCE", "Normal shift, including the break",
                     "For everyone without their own hours. 540 minutes = 9 hours.", "MINUTES", 60, 960),
             new Def("attendance.defaultBreakMinutes", "ATTENDANCE", "Normal break (compulsory)",
-                    "Attendance is marked only when this break is taken. 60 minutes = 1 hour.", "MINUTES", 0, 240));
+                    "Attendance is marked only when this break is taken. 60 minutes = 1 hour.", "MINUTES", 0, 240),
+            new Def("attendance.idleMinutes", "ATTENDANCE", "Idle check after",
+                    "Minutes with no mouse or keyboard use before the tool asks 'Are you there?'.", "INT", 5, 240));
 
     private static final Map<String, String> FALLBACK = Map.ofEntries(
             Map.entry("company.name", "Suma Soft"), Map.entry("project.defaultTimeZone", "Asia/Kolkata"),
@@ -63,7 +65,8 @@ public class SettingsService {
             Map.entry("sla.default.LOW.responseMinutes", "480"), Map.entry("sla.default.LOW.resolutionMinutes", "2880"),
             Map.entry("automation.alertLookbackDays", "30"), Map.entry("automation.maxNotificationsPerRun", "300"),
             Map.entry("automation.dailySummaryHour", "9"),
-            Map.entry("attendance.defaultShiftMinutes", "540"), Map.entry("attendance.defaultBreakMinutes", "60"));
+            Map.entry("attendance.defaultShiftMinutes", "540"), Map.entry("attendance.defaultBreakMinutes", "60"),
+            Map.entry("attendance.idleMinutes", "20"));
 
     public record Setting(String key, String group, String label, String help, String type, Integer min, Integer max,
                           String value, Instant updatedAt, String updatedBy) {

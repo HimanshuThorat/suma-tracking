@@ -21,6 +21,8 @@ if (-not $volume) {
     $env:SUMA_DB_PASSWORD = Read-Hidden "Database password"
 }
 
+$env:SUMA_MAIL_PASSWORD = Read-MailPassword $Root
+
 Step "3/5  Building and starting. The FIRST time takes 5 to 15 minutes (it downloads Java, Node and PostgreSQL)..."
 $since = Get-Since
 docker compose up -d --build --force-recreate
@@ -72,7 +74,7 @@ if ($count -eq '0') {
     Good "Users already exist. Sign in with your account."
 }
 
-Remove-Item Env:SUMA_DB_PASSWORD -ErrorAction SilentlyContinue
+Remove-Item Env:SUMA_DB_PASSWORD, Env:SUMA_MAIL_PASSWORD -ErrorAction SilentlyContinue
 Write-Host ""
 Write-Host "Suma Tracking is running:  http://localhost:3000" -ForegroundColor Green
 Write-Host "To stop it:  powershell -ExecutionPolicy Bypass -File scripts\docker-stop.ps1" -ForegroundColor Yellow

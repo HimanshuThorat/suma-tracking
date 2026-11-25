@@ -30,6 +30,7 @@ public final class RouteRules {
         // ---- open to every signed-in employee
         add("*", "/api/auth/**", "sign in");
         add("*", "/api/notifications/**", "see notifications");
+        add("*", "/api/mail/**", "check email (Super Admin)");
         add("GET", "/api/notifications", "see notifications");
         add("GET", "/api/rbac/me", "see own permissions");
         add("GET", "/api/settings/public", "read basic settings");
@@ -41,6 +42,7 @@ public final class RouteRules {
         add("*", "/api/attendance/me/**", "punch in, breaks and punch out");
 
         // ---- attendance of other people (Step 41)
+        add("*", "/api/attendance/reports/**", "view or send attendance reports", "ATTENDANCE_REPORTS");
         add("GET", "/api/attendance/team", "view team attendance", "ATTENDANCE_VIEW", "ATTENDANCE_MANAGE");
         add("GET", "/api/attendance/people/**", "view team attendance", "ATTENDANCE_VIEW", "ATTENDANCE_MANAGE");
         add("GET", "/api/attendance/schedules", "view working hours", "ATTENDANCE_VIEW", "ATTENDANCE_MANAGE");

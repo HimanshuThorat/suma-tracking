@@ -33,6 +33,7 @@ import java.util.List;
  *   POST /api/attendance/me/punch-out
  *   POST /api/attendance/me/seen            once after sign-in (saves IP and device)
  *   GET  /api/attendance/me/history?days=31
+ *   POST /api/attendance/me/idle            {idleFrom, answer: WORKING|TEA|LUNCH|DINNER|REFRESHMENT, note}
  * ATTENDANCE_VIEW or ATTENDANCE_MANAGE (Super Admin always):
  *   GET  /api/attendance/team?date=2026-11-20
  *   GET  /api/attendance/people/{userId}/events?days=30
@@ -80,6 +81,11 @@ public class AttendanceController {
     @PostMapping("/me/seen")
     public List<String> seen(@Valid @RequestBody(required = false) DeviceInfo device, HttpServletRequest request) {
         return service.seen(device, request);
+    }
+
+    @PostMapping("/me/idle")
+    public MyDay idle(@Valid @RequestBody AttendanceDtos.IdleForm form, HttpServletRequest request) {
+        return service.idle(form, request);
     }
 
     @GetMapping("/me/history")

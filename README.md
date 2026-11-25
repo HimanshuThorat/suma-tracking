@@ -65,6 +65,14 @@ website (Deployment with 2 copies) and their Services.
 
 ---
 
+## Email (password reset links and report emails)
+
+All email and report settings are in one file: **`config/mail-and-reports.properties`**
+(sender address, email server, website link, monthly report day and hour, extra people).
+Edit it any time; the backend reads it again within 1 minute.
+
+The email **password** is never written in that file. The start script asks for it (press Enter to skip email).
+
 ## What runs where
 
 | Part | Docker | Kubernetes |

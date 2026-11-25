@@ -19,6 +19,7 @@ import SlaPage from './pages/SlaPage.jsx'
 import NotificationsPage from './pages/NotificationsPage.jsx'
 import AutomationPage from './pages/AutomationPage.jsx'
 import AttendancePage from './pages/AttendancePage.jsx'
+import PasswordResetPage from './pages/PasswordResetPage.jsx'
 import { AttendanceProvider, PunchBanner, TopbarTimer } from './attendance.jsx'
 
 // Step 39: each menu item needs one of these permissions (no list = every signed-in employee).
@@ -43,10 +44,10 @@ const MENU = [
 // Older links (#/import, #/people) still work.
 const ALIASES = { import: 'integrations', people: 'team' }
 
-/** Public pages (no sign-in needed): #/about and #/login. */
+/** Public pages (no sign-in needed): #/about, #/login, #/forgot-password and #/reset-password. */
 function publicPage() {
   const raw = window.location.hash.replace('#/', '').split(/[?/]/)[0]
-  return raw === 'about' || raw === 'login' ? raw : null
+  return ['about', 'login', 'forgot-password', 'reset-password'].includes(raw) ? raw : null
 }
 
 function pageFromHash() {
@@ -123,6 +124,9 @@ export default function App() {
   }
 
   if (checking) return <div className="boot">Opening Suma Tracking...</div>
+  if (pub === 'forgot-password' || pub === 'reset-password') {
+    return <PasswordResetPage mode={pub} theme={theme} onTheme={setTheme} />
+  }
   if (pub === 'about' || (!user && pub !== 'login')) {
     return <LandingPage theme={theme} onTheme={setTheme} signedIn={Boolean(user)} />
   }

@@ -2,6 +2,7 @@ import { useCallback, useEffect, useState } from 'react'
 import { api } from '../api.js'
 import { Drawer, PageHead, Toast } from '../components.jsx'
 import { useCan, useMe } from '../permissions.js'
+import AttendanceReports from './AttendanceReports.jsx'
 import {
   AlertIcon, AnalogClock, BREAK_TYPES, BreakFood, FLAG, FlagChips, Ring, ZONE, breakType, bigTime, clock, hm, liveDay, longDate, timeOf,
   useAttendance, useNow,
@@ -23,6 +24,8 @@ export default function AttendancePage() {
   const canView = can('ATTENDANCE_VIEW', 'ATTENDANCE_MANAGE')
   const tabs = [['day', 'My day'], ['history', 'My history']]
   if (canView) tabs.push(['team', 'Team board'], ['hours', 'Working hours'])
+  const canReports = can('ATTENDANCE_REPORTS')
+  if (canReports) tabs.push(['reports', 'Reports'])
   const [tab, setTab] = useState('day')
   return (
     <div className="page">
@@ -36,6 +39,7 @@ export default function AttendancePage() {
       {tab === 'history' && <MyHistory />}
       {tab === 'team' && canView && <TeamBoard />}
       {tab === 'hours' && canView && <WorkingHours />}
+      {tab === 'reports' && canReports && <AttendanceReports />}
     </div>
   )
 }
@@ -472,7 +476,7 @@ function PersonDrawer({ person, canManage, onClose, onChanged }) {
   )
 }
 
-const EVENT = { SIGN_IN: 'Signed in', PUNCH_IN: 'Punched in', BREAK_START: 'Break started', BREAK_END: 'Break ended', PUNCH_OUT: 'Punched out', MANAGER_CLOSE: 'Closed by manager' }
+const EVENT = { SIGN_IN: 'Signed in', PUNCH_IN: 'Punched in', BREAK_START: 'Break started', BREAK_END: 'Break ended', PUNCH_OUT: 'Punched out', MANAGER_CLOSE: 'Closed by manager', IDLE: 'Idle check answered' }
 
 function CloseForm({ day, onCancel, onDone }) {
   const [time, setTime] = useState('18:00')

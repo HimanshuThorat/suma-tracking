@@ -86,6 +86,7 @@ export default function LoginPage({ onLoggedIn, theme, onTheme }) {
               <span>Password</span>
               <input type="password" autoComplete="current-password" value={password} onChange={(e) => setPassword(e.target.value)} />
             </label>
+            <a className="forgot-link" href="#/forgot-password">Forgot password?</a>
             {error && <div className="alert error hud-denied" role="alert"><strong>ACCESS DENIED.</strong> {error}</div>}
             <button className="btn primary wide hud-submit" type="submit" disabled={busy}>
               {busy ? 'Verifying...' : 'Sign in'}

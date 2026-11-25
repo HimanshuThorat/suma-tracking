@@ -9,7 +9,7 @@ function Good([string]$Text) { Write-Host "     $Text" -ForegroundColor Green }
 function Fail([string]$Text) {
     Write-Host ""
     Write-Host $Text -ForegroundColor Red
-    Remove-Item Env:SUMA_DB_PASSWORD, Env:SUMA_BOOTSTRAP_ADMIN_EMAIL, Env:SUMA_BOOTSTRAP_ADMIN_PASSWORD -ErrorAction SilentlyContinue
+    Remove-Item Env:SUMA_DB_PASSWORD, Env:SUMA_MAIL_PASSWORD, Env:SUMA_BOOTSTRAP_ADMIN_EMAIL, Env:SUMA_BOOTSTRAP_ADMIN_PASSWORD -ErrorAction SilentlyContinue
     exit 1
 }
 
@@ -47,6 +47,19 @@ function Read-NewPassword([string]$What, [string]$Email) {
         if ($one -ne $two) { Write-Host "     The two passwords are not the same. Try again." -ForegroundColor Red; continue }
         return $one
     }
+}
+
+# Step 43: the email password (optional). It is given to the backend only while it runs; never saved in a file.
+function Read-MailPassword([string]$Root) {
+    $cfg = Join-Path $Root 'config\mail-and-reports.properties'
+    $from = 'the sending email'
+    if (Test-Path $cfg) {
+        $line = Select-String -Path $cfg -Pattern '^\s*mail\.username\s*=\s*(.+)$' | Select-Object -First 1
+        if ($line) { $from = $line.Matches[0].Groups[1].Value.Trim() }
+    }
+    $pw = Read-Hidden "Email password for $from (press Enter to skip email)"
+    if ($pw) { Good "Email will be on." } else { Write-Host "     Email is off for this run (reset links and report emails will not be sent)." -ForegroundColor Yellow }
+    return $pw
 }
 
 function Read-FirstAdmin {

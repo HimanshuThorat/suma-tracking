@@ -17,7 +17,7 @@ import java.time.Instant;
 
 /**
  * The security "front door":
- *  - Only POST /api/auth/login is open. EVERYTHING else needs a valid login token.
+ *  - Only sign-in and the password reset by email are open. EVERYTHING else needs a valid login token.
  *  - No cookies, no server memory sessions: the token in the Authorization header is checked every time.
  *    (Because no cookies are used, CSRF protection is not needed and is switched off.)
  *  - Passwords are hashed with BCrypt (strength 12).
@@ -40,6 +40,9 @@ public class SecurityConfig {
             .sessionManagement(session -> session.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
             .authorizeHttpRequests(auth -> auth
                 .requestMatchers(HttpMethod.POST, "/api/auth/login").permitAll()
+                // Step 43: "Forgot password?" works without signing in
+                .requestMatchers(HttpMethod.POST, "/api/auth/forgot-password", "/api/auth/reset-password").permitAll()
+                .requestMatchers(HttpMethod.GET, "/api/auth/reset-password/check").permitAll()
                 .requestMatchers("/error").permitAll()
                 .anyRequest().authenticated())
             .exceptionHandling(errors -> errors

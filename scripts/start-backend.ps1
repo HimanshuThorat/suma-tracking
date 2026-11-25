@@ -31,6 +31,17 @@ if (-not $ok) {
 $env:SUMA_DB_PASSWORD = $pw
 Write-Host "     Password is correct." -ForegroundColor Green
 
+# Step 43: the email password (for reset links and report emails). Optional: press Enter to skip.
+$cfg = "C:\Dev\SumaTracking\config\mail-and-reports.properties"
+$from = "the sending email"
+if (Test-Path $cfg) {
+    $line = Select-String -Path $cfg -Pattern '^\s*mail\.username\s*=\s*(.+)$' | Select-Object -First 1
+    if ($line) { $from = $line.Matches[0].Groups[1].Value.Trim() }
+}
+$mailPw = [System.Net.NetworkCredential]::new("", (Read-Host "Email password for $from (press Enter to skip email)" -AsSecureString)).Password
+if ($mailPw) { $env:SUMA_MAIL_PASSWORD = $mailPw; Write-Host "     Email is on." -ForegroundColor Green }
+else { Remove-Item Env:SUMA_MAIL_PASSWORD -ErrorAction SilentlyContinue; Write-Host "     Email is off for this run." -ForegroundColor Yellow }
+
 Write-Host "3/4  Freeing port 8080 (stopping an old backend if one is still running)..." -ForegroundColor Cyan
 Get-NetTCPConnection -LocalPort 8080 -State Listen -ErrorAction SilentlyContinue |
     ForEach-Object { Stop-Process -Id $_.OwningProcess -Force -ErrorAction SilentlyContinue }

@@ -39,7 +39,8 @@ public final class AttendanceDtos {
     }
 
     /** Everything the timer and break cards need. serverNow lets the screen correct its own clock. */
-    public record MyDay(Instant serverNow, Schedule schedule, Day day, boolean doneForToday, boolean canPunchInAgain, String ip) {
+    public record MyDay(Instant serverNow, Schedule schedule, Day day, boolean doneForToday, boolean canPunchInAgain, String ip,
+                        int idleMinutes) {
     }
 
     public record Event(long id, String kind, Instant at, String ip, String deviceId, String deviceLabel,
@@ -56,6 +57,17 @@ public final class AttendanceDtos {
 
     public record ScheduleRow(long userId, String fullName, String employeeCode, String roleName, Schedule schedule,
                               Instant updatedAt, String updatedBy, boolean editable) {
+    }
+
+    /** Step 43: the answer to "Are you there?" after the screen was idle. */
+    public record IdleForm(
+            Instant idleFrom,
+            @NotBlank(message = "Choose what you were doing")
+            @Pattern(regexp = "^(WORKING|TEA|LUNCH|DINNER|REFRESHMENT)$", message = "Choose working or a type of break")
+            String answer,
+            @Size(max = 200, message = "Write at most 200 characters") String note,
+            @Size(max = 64) String deviceId,
+            @Size(max = 120) String deviceLabel) {
     }
 
     public record ScheduleForm(

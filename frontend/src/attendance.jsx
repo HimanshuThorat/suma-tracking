@@ -45,6 +45,7 @@ export const FLAG = {
   NEW_IP: { text: 'New IP address', tone: 'warn', help: 'Came from a network not used before.' },
   SHARED_DEVICE: { text: 'Shared computer', tone: 'bad', help: 'The same computer was used by another person.' },
   UNKNOWN_DEVICE: { text: 'Device not recognised', tone: 'warn', help: 'The browser did not allow a device id.' },
+  IDLE: { text: 'Idle check', tone: 'warn', help: 'No mouse or keyboard use for a while; the person was asked what they were doing.' },
 }
 
 /** A tick every second. */
@@ -118,6 +119,7 @@ export function AttendanceProvider({ children }) {
 
   const act = useCallback(async (kind, extra) => {
     const call = { in: api.punchIn, breakStart: api.breakStart, breakEnd: api.breakEnd, out: api.punchOut }[kind]
+    askIdlePermission() // needs a click, so it is asked here (Chrome and Edge only)
     setBusy(true)
     try {
       const d = await call({ ...deviceInfo(), ...(extra || {}) })
@@ -145,8 +147,137 @@ export function AttendanceProvider({ children }) {
     }
   }, [over, now])
 
+  // Step 43: the idle check. While working (not on a break), no mouse or keyboard use for N minutes
+  // opens "Are you there?". Chrome and Edge can notice activity in ANY program (with permission);
+  // other browsers only see activity on this page.
+  const idleMinutes = state.data?.idleMinutes || 20
+  const watching = Boolean(live && live.open && !live.onBreak)
+  const [idleSince, setIdleSince] = useState(null)
+  useIdleWatch(watching && !idleSince, idleMinutes, (since) => {
+    setIdleSince(since)
+    playAlarm(4)
+  })
+
+  async function answerIdle(answer, note) {
+    setBusy(true)
+    try {
+      const d = await api.attendanceIdle({ idleFrom: idleSince.toISOString(), answer, note: note || null, ...deviceInfo() })
+      setState({ data: withServerNow(d), fetchedAt: Date.now(), error: '' })
+      setIdleSince(null)
+      return null
+    } catch (e) {
+      load()
+      setIdleSince(null)
+      return e.message
+    } finally {
+      setBusy(false)
+    }
+  }
+
   const value = useMemo(() => ({ ...state, busy, live, act, reload: load }), [state, busy, live, act, load])
-  return <AttendanceContext.Provider value={value}>{children}</AttendanceContext.Provider>
+  return (
+    <AttendanceContext.Provider value={value}>
+      {children}
+      {idleSince && watching && <IdlePrompt since={idleSince} busy={busy} onAnswer={answerIdle} />}
+    </AttendanceContext.Provider>
+  )
+}
+
+// ------------------------------------------------------------------ idle detection (Step 43)
+
+let idlePermission = 'unknown'
+
+/** Asks once for "notice when you are away" (Chrome / Edge, needs a click). Other browsers: nothing happens. */
+export function askIdlePermission() {
+  try {
+    if (idlePermission !== 'unknown' || !('IdleDetector' in window)) return
+    idlePermission = 'asking'
+    window.IdleDetector.requestPermission().then((r) => { idlePermission = r }).catch(() => { idlePermission = 'denied' })
+  } catch {
+    idlePermission = 'denied'
+  }
+}
+
+/** Calls onIdle(since) once when there has been no activity for `minutes`. */
+function useIdleWatch(active, minutes, onIdle) {
+  const cb = useRef(onIdle)
+  cb.current = onIdle
+  useEffect(() => {
+    if (!active) return undefined
+    const ms = Math.max(1, minutes) * 60000
+    let last = Date.now()
+    let fired = false
+    const fire = (since) => { if (!fired) { fired = true; cb.current(since) } }
+    const mark = () => { last = Date.now() }
+    const events = ['mousemove', 'mousedown', 'keydown', 'wheel', 'touchstart', 'scroll']
+    events.forEach((e) => window.addEventListener(e, mark, { passive: true }))
+    // in-page check, every 15 seconds
+    const timer = setInterval(() => {
+      if (Date.now() - last >= ms) fire(new Date(last))
+    }, 15000)
+    // whole-computer check (Chrome / Edge, when allowed)
+    const ctrl = new AbortController()
+    let detector = null
+    const start = async () => {
+      try {
+        if (!('IdleDetector' in window)) return
+        const p = await navigator.permissions.query({ name: 'idle-detection' })
+        if (p.state !== 'granted') return
+        detector = new window.IdleDetector()
+        detector.addEventListener('change', () => {
+          if (detector.userState === 'idle') fire(new Date(Date.now() - ms))
+          else mark() // active in another program counts as activity
+        })
+        await detector.start({ threshold: Math.max(60000, ms), signal: ctrl.signal })
+      } catch {
+        /* not allowed here: the in-page check still works */
+      }
+    }
+    start()
+    return () => {
+      events.forEach((e) => window.removeEventListener(e, mark))
+      clearInterval(timer)
+      ctrl.abort()
+    }
+  }, [active, minutes])
+}
+
+function IdlePrompt({ since, busy, onAnswer }) {
+  const now = useNow()
+  const [note, setNote] = useState('')
+  const [error, setError] = useState('')
+  const mins = Math.max(0, Math.floor((now - since.getTime()) / 60000))
+  async function pick(answer) {
+    setError('')
+    const e = await onAnswer(answer, note.trim())
+    if (e) setError(e)
+  }
+  return (
+    <div className="idle-overlay" role="alertdialog" aria-modal="true" aria-labelledby="idle-title">
+      <div className="idle-card">
+        <div className="idle-pulse" aria-hidden="true"><AlertIcon size={34} /></div>
+        <h2 id="idle-title">Are you there?</h2>
+        <p>No mouse or keyboard use since <strong>{timeOf(since.toISOString())}</strong> ({mins} min). What were you doing?</p>
+        <div className="idle-actions">
+          <button type="button" className="btn primary big" disabled={busy} onClick={() => pick('WORKING')}>I was working</button>
+        </div>
+        <label className="field idle-note">
+          <span>Note (optional, for example "in a client call")</span>
+          <input value={note} maxLength={200} onChange={(e) => setNote(e.target.value)} />
+        </label>
+        <p className="muted small">Or save this time as a break:</p>
+        <div className="break-pick-grid">
+          {BREAK_TYPES.map((b) => (
+            <button key={b.code} type="button" className="break-opt" disabled={busy} onClick={() => pick(b.code)}>
+              <span className="break-opt-icon" aria-hidden="true">{b.icon}</span>
+              <strong>{b.name}</strong>
+            </button>
+          ))}
+        </div>
+        {error && <div className="alert error" role="alert">{error}</div>}
+      </div>
+    </div>
+  )
 }
 
 function withServerNow(d) {

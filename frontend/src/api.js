@@ -66,14 +66,63 @@ async function request(method, path, { body, form, query } = {}) {
     }
   }
   if (!res.ok) {
-    if (res.status === 401 && path !== '/api/auth/login') onUnauthorized()
+    if (res.status === 401 && !path.startsWith('/api/auth/')) onUnauthorized()
     const message = (data && data.message) || `Request failed (${res.status})`
     throw new ApiError(res.status, message, data && data.fieldErrors)
   }
   return data
 }
 
+/** Downloads a file from the backend (with the sign-in token) and saves it in the browser's Downloads. */
+export async function downloadFile(path, query, fallbackName) {
+  const url = new URL(path, window.location.origin)
+  Object.entries(query || {}).forEach(([k, v]) => { if (v !== undefined && v !== null && v !== '') url.searchParams.set(k, v) })
+  const headers = {}
+  const token = getToken()
+  if (token) headers.Authorization = `Bearer ${token}`
+  let res
+  try {
+    res = await fetch(url, { headers })
+  } catch {
+    throw new ApiError(0, 'Cannot reach the server. Is the backend running?')
+  }
+  if (!res.ok) {
+    let message = `Download failed (${res.status})`
+    try { message = (await res.json()).message || message } catch { /* not JSON */ }
+    if (res.status === 401) onUnauthorized()
+    throw new ApiError(res.status, message)
+  }
+  const blob = await res.blob()
+  const cd = res.headers.get('Content-Disposition') || ''
+  const m = cd.match(/filename="?([^";]+)"?/)
+  const a = document.createElement('a')
+  a.href = URL.createObjectURL(blob)
+  a.download = m ? m[1] : fallbackName
+  document.body.appendChild(a)
+  a.click()
+  a.remove()
+  setTimeout(() => URL.revokeObjectURL(a.href), 2000)
+  return a.download
+}
+
 export const api = {
+  // password reset by email (Step 43) - these work without signing in
+  forgotPassword: (email) => request('POST', '/api/auth/forgot-password', { body: { email } }),
+  checkResetLink: (token) => request('GET', '/api/auth/reset-password/check', { query: { token } }),
+  resetPasswordByLink: (token, newPassword) => request('POST', '/api/auth/reset-password', { body: { token, newPassword } }),
+  // email set-up (Super Admin)
+  mailStatus: () => request('GET', '/api/mail/status'),
+  mailTest: () => request('POST', '/api/mail/test'),
+  mailLog: () => request('GET', '/api/mail/log'),
+  // attendance reports (Step 43)
+  reportDaily: (date) => request('GET', '/api/attendance/reports/daily', { query: { date } }),
+  reportMonthly: (month) => request('GET', '/api/attendance/reports/monthly', { query: { month } }),
+  reportRecipients: (q) => request('GET', '/api/attendance/reports/recipients', { query: { q } }),
+  reportSend: (body) => request('POST', '/api/attendance/reports/send', { body }),
+  reportDownload: (type, period) => (type === 'DAILY'
+    ? downloadFile('/api/attendance/reports/daily/download', { date: period }, `attendance-daily-${period}.csv`)
+    : downloadFile('/api/attendance/reports/monthly/download', { month: period }, `attendance-monthly-${period}.csv`)),
+  attendanceIdle: (body) => request('POST', '/api/attendance/me/idle', { body }),
   // attendance (Step 41)
   attendanceMe: () => request('GET', '/api/attendance/me'),
   punchIn: (device) => request('POST', '/api/attendance/me/punch-in', { body: device }),
